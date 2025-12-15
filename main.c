@@ -1,4 +1,5 @@
-#include "tutorials/timeout_example.h"
+#include "tutorials/gobject-example.h"
+#include "tutorials/timeout-example.h"
 #include <gio/gio.h>
 #include <glib.h>
 #include <stdio.h>

@@ -1,4 +1,4 @@
-#include "timeout_example.h"
+#include "timeout-example.h"
 #include "glib.h"
 #include <stdio.h>
 
