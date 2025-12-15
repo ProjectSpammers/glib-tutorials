@@ -16,7 +16,9 @@ typedef struct {
 
 Tutorial tutorials[] = {
     {"timeout", timeout_tutorial},
+    {"gobject-get-set", gobject_tutorial_get_set},
     // { "example", example_tutorial }, // Future tutorials go here
+
     {NULL, NULL} // end of the array
 };
 
