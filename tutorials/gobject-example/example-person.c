@@ -4,9 +4,17 @@
 
 typedef struct {
   gfloat salary;
-} ExamplePersonPrivate;
+} ExamplePersonPrivate; // These are private values
+                        // Setting them in the C file in such way makes them
+                        // private
 
-// G_DEFINE_TYPE(ExamplePerson, example_person, G_TYPE_OBJECT)
+/* G_DEFINE_TYPE(ExamplePerson, example_person, G_TYPE_OBJECT) */ // IF there
+                                                                  // are no
+                                                                  // private
+                                                                  // values we
+                                                                  // can define
+                                                                  // the type
+                                                                  // with this;
 G_DEFINE_TYPE_WITH_PRIVATE(ExamplePerson, example_person, G_TYPE_OBJECT)
 
 enum { PROP_0, PROP_NAME, LAST_PROP };

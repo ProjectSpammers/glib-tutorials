@@ -9,7 +9,8 @@ struct _ExamplePerson {
   GObject parent_instance;
   gchar *name;
   gint age;
-};
+}; // These are public values, setting them in the header files
+   // makes them so.
 
 ExamplePerson *example_person_new(void);
 

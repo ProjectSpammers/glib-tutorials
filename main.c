@@ -1,13 +1,12 @@
+#include "tutorials/gio-example/notification-sender.h"
 #include "tutorials/gobject-example/example-person.h"
 #include "tutorials/timeout-example/timeout.h"
 #include <gio/gio.h>
 #include <glib.h>
 #include <stdio.h>
+#include <string.h>
 
-// function typedef
 typedef void (*TutorialFunc)();
-
-GMainLoop *loop;
 
 typedef struct {
   const char *name; // command name
@@ -17,7 +16,9 @@ typedef struct {
 Tutorial tutorials[] = {
     {"timeout", timeout_tutorial},
     {"gobject-get-set", gobject_tutorial_get_set},
-    // { "example", example_tutorial }, // Future tutorials go here
+    {"dbus-notification", send_notification},
+
+    /* { "example", example_tutorial_function }, */ // Future tutorials go here
 
     {NULL, NULL} // end of the array
 };
@@ -37,7 +38,6 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  loop = g_main_loop_new(NULL, FALSE);
   gboolean found = FALSE;
 
   for (int i = 0; tutorials[i].name != NULL; i++) {
@@ -56,9 +56,6 @@ int main(int argc, char *argv[]) {
     print_help(argv[0]);
     return 1;
   }
-
-  g_main_loop_run(loop);
-  g_main_loop_unref(loop);
 
   return 0;
 }
