@@ -5,6 +5,12 @@
 #define EXAMPLE_PERSON_TYPE (example_person_get_type())
 G_DECLARE_FINAL_TYPE(ExamplePerson, example_person, EXAMPLE, PERSON, GObject)
 
+struct _ExamplePerson {
+  GObject parent_instance;
+  gchar *name;
+  gint age;
+};
+
 ExamplePerson *example_person_new(void);
 
 // Getters

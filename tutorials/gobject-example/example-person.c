@@ -1,8 +1,13 @@
-#include "example-person-private.h"
+#include "example-person.h"
 #include "glib-object.h"
 #include "glib.h"
 
-G_DEFINE_TYPE(ExamplePerson, example_person, G_TYPE_OBJECT)
+typedef struct {
+  gfloat salary;
+} ExamplePersonPrivate;
+
+// G_DEFINE_TYPE(ExamplePerson, example_person, G_TYPE_OBJECT)
+G_DEFINE_TYPE_WITH_PRIVATE(ExamplePerson, example_person, G_TYPE_OBJECT)
 
 enum { PROP_0, PROP_NAME, LAST_PROP };
 enum { YO, LAST_SIGNAL };
@@ -52,10 +57,6 @@ static void example_person_init(ExamplePerson *self) {
   self->age = 30;
 }
 
-void example_person_emit_yo(ExamplePerson *self) {
-  g_signal_emit(self, signals[YO], 0);
-}
-
 ExamplePerson *example_person_new(void) {
   return g_object_new(EXAMPLE_PERSON_TYPE, 0);
 }
@@ -71,6 +72,7 @@ void example_person_set_name(ExamplePerson *self, const gchar *name) {
     self->name = g_strdup(name);
   }
 }
+
 void example_person_set_age(ExamplePerson *self, gint age) { self->age = age; }
 
 void gobject_tutorial_get_set(void) {
