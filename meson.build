@@ -11,7 +11,11 @@ gio_dep = dependency('gio-2.0')
 
 gio_unix_dep = dependency('gio-unix-2.0', required: false)
 
-src_files = ['main.c', 'tutorials/timeout-example.c', 'tutorials/gobject-example.c']
+src_files = [
+  'main.c',
+  'tutorials/timeout-example/timeout.c',
+  'tutorials/gobject-example/example-person.c',
+]
 
 executable(
   'glib_app',
