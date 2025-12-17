@@ -1,4 +1,4 @@
-#include "tutorials/gobject-example.h"
+#include "tutorials/gobject-example/example-person.h"
 #include "tutorials/timeout-example.h"
 #include <gio/gio.h>
 #include <glib.h>
