@@ -16,6 +16,7 @@ src_files = [
   'tutorials/timeout-example/timeout.c',
   'tutorials/gobject-example/example-person.c',
   'tutorials/gio-example/notification-sender.c',
+  'tutorials/gstreamer-example/screencast.c',
 ]
 
 executable(
