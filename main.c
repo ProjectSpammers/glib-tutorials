@@ -1,5 +1,6 @@
 #include "tutorials/gio-example/notification-sender.h"
 #include "tutorials/gobject-example/example-person.h"
+#include "tutorials/gstreamer-example/screencast.h"
 #include "tutorials/timeout-example/timeout.h"
 #include <gio/gio.h>
 #include <glib.h>
@@ -17,6 +18,7 @@ Tutorial tutorials[] = {
     {"timeout", timeout_tutorial},
     {"gobject-get-set", gobject_tutorial_get_set},
     {"dbus-notification", send_notification},
+    {"screencast", screencast_tutorial},
 
     /* { "example", example_tutorial_function }, */ // Future tutorials go here
 
