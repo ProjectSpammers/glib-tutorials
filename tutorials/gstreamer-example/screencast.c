@@ -12,6 +12,18 @@ GDBusConnection *connection;
 gchar *sanitized_name;
 gchar *session_path;
 
+static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
+                              const gchar *object_path,
+                              const gchar *interface_name,
+                              const gchar *signal_name, GVariant *parameters,
+                              gpointer user_data);
+
+static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
+                               const gchar *object_path,
+                               const gchar *interface_name,
+                               const gchar *signal_name, GVariant *parameters,
+                               gpointer user_data);
+
 gchar *sanitize_sender_name(const gchar *sender_name) {
   if (sender_name == NULL) {
     return NULL;
@@ -39,29 +51,8 @@ gchar *generate_token(const gchar *prefix) {
 
   return g_strdup_printf("%s%u", prefix, random_num);
 }
-static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
-                              const gchar *object_path,
-                              const gchar *interface_name,
-                              const gchar *signal_name, GVariant *parameters,
-                              gpointer user_data) {
-  guint32 response_code;
-  GVariant *res;
-  g_variant_get(parameters, "(u@a{sv})", &response_code, &res);
-}
 
-static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
-                               const gchar *object_path,
-                               const gchar *interface_name,
-                               const gchar *signal_name, GVariant *parameters,
-                               gpointer user_data) {
-  guint32 response_code;
-  g_variant_get(parameters, "(u@a{sv})", &response_code, NULL);
-
-  if (response_code != 0) {
-    g_printerr("Couldn't get the proper response code for screen selection.\n");
-    g_main_loop_quit(loop);
-    return;
-  }
+static void start_screencast(GDBusConnection *conn) {
   gchar *token_start = generate_token("tk_start");
   gchar *start_request_path = g_strdup_printf(
       "%s/request/%s/%s", PORTAL_OBJECT_PATH, sanitized_name, token_start);
@@ -79,47 +70,40 @@ static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
   g_dbus_connection_signal_subscribe(
       conn, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response", start_request_path,
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_start_response, NULL, NULL);
+
+  g_free(token_start);
+  g_free(start_request_path);
 }
 
-void screencast_tutorial() {
+static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
+                              const gchar *object_path,
+                              const gchar *interface_name,
+                              const gchar *signal_name, GVariant *parameters,
+                              gpointer user_data) {
+  guint32 response_code;
+  GVariant *res;
+  g_variant_get(parameters, "(u@a{sv})", &response_code, &res);
+  g_main_loop_quit(loop);
+}
 
-  loop = g_main_loop_new(NULL, FALSE);
+static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
+                               const gchar *object_path,
+                               const gchar *interface_name,
+                               const gchar *signal_name, GVariant *parameters,
+                               gpointer user_data) {
+  guint32 response_code;
+  g_variant_get(parameters, "(u@a{sv})", &response_code, NULL);
 
-  g_print("Starting screencast tutorial.\n");
-
-  GError *error = NULL;
-  connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
-
-  if (error) {
-    g_printerr("Connection error.\n");
-    g_error_free(error);
+  if (response_code != 0) {
+    g_printerr("Couldn't get the proper response code for screen selection.\n");
+    g_main_loop_quit(loop);
     return;
   }
+  start_screencast(conn);
+}
 
-  gchar *token_create = generate_token("tk_create");
-  gchar *token_session = generate_token("tk_sess");
+static void select_sources(GDBusConnection *conn, const gchar *token_session) {
   gchar *token_select = generate_token("tk_slct");
-
-  GVariantBuilder create_session_opts;
-  g_variant_builder_init(&create_session_opts, G_VARIANT_TYPE("a{sv}"));
-  g_variant_builder_add(&create_session_opts, "{sv}", "handle_token",
-                        g_variant_new_string(token_create));
-  g_variant_builder_add(&create_session_opts, "{sv}", "session_handle_token",
-                        g_variant_new_string(token_session));
-
-  GVariant *res = g_dbus_connection_call_sync(
-      connection, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH, SCREENCAST_INTERFACE,
-      "CreateSession", g_variant_new("(a{sv})", &create_session_opts), NULL,
-      G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
-
-  if (error) {
-    g_printerr("CreateSession error.\n");
-    g_error_free(error);
-    g_variant_unref(res);
-    return;
-  }
-
-  g_variant_unref(res);
 
   const gchar *unique_name = g_dbus_connection_get_unique_name(connection);
   sanitized_name = sanitize_sender_name(unique_name);
@@ -143,6 +127,67 @@ void screencast_tutorial() {
   g_dbus_connection_signal_subscribe(
       connection, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response", request_path,
       NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_select_response, NULL, NULL);
+
+  g_free(token_select);
+  g_free(request_path);
+}
+
+static gchar *create_session(GDBusConnection *conn) {
+  GError *error = NULL;
+  gchar *token_create = generate_token("tk_create");
+  gchar *token_session = generate_token("tk_sess");
+
+  GVariantBuilder create_session_opts;
+  g_variant_builder_init(&create_session_opts, G_VARIANT_TYPE("a{sv}"));
+  g_variant_builder_add(&create_session_opts, "{sv}", "handle_token",
+                        g_variant_new_string(token_create));
+  g_variant_builder_add(&create_session_opts, "{sv}", "session_handle_token",
+                        g_variant_new_string(token_session));
+
+  GVariant *res = g_dbus_connection_call_sync(
+      conn, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH, SCREENCAST_INTERFACE,
+      "CreateSession", g_variant_new("(a{sv})", &create_session_opts), NULL,
+      G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+
+  g_free(token_create);
+
+  if (error) {
+    g_printerr("CreateSession error: %s\n", error->message);
+    g_error_free(error);
+    g_variant_unref(res);
+    g_free(token_session);
+    return NULL;
+  }
+
+  g_variant_unref(res);
+  return token_session;
+}
+
+void screencast_tutorial() {
+
+  loop = g_main_loop_new(NULL, FALSE);
+
+  g_print("Starting screencast tutorial.\n");
+
+  GError *error = NULL;
+  connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+
+  if (error) {
+    g_printerr("Connection error: %s\n", error->message);
+    g_error_free(error);
+    return;
+  }
+
+  gchar *token_session = create_session(connection);
+  if (token_session == NULL) {
+    g_object_unref(connection);
+    g_main_loop_unref(loop);
+    return;
+  }
+
+  select_sources(connection, token_session);
+
+  g_free(token_session);
 
   g_main_loop_run(loop);
 }
