@@ -17,6 +17,7 @@ src_files = [
   'tutorials/gobject-example/example-person.c',
   'tutorials/gio-example/notification-sender.c',
   'tutorials/gstreamer-example/screencast.c',
+  'tutorials/common/utils.c',
 ]
 
 executable(
