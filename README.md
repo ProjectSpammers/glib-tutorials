@@ -26,6 +26,20 @@ The repository is organized into a main application and several tutorial modules
 └── ...
 ```
 
+## Contents
+
+- [Team](#team)
+- [Project Structure](#project-structure)
+- [Tutorials](#tutorials)
+  - [1. GLib: The Main Event Loop (`timeout`)](#1-glib-the-main-event-loop-timeout)
+  - [2. GObject: The Type System (`gobject-get-set`)](#2-gobject-the-type-system-gobject-get-set)
+  - [3. GIO: D-Bus Communication](#3-gio-d-bus-communication)
+  - [4. Common Utilities (`common`)](#4-common-utilities-common)
+- [Installation and Building](#installation-and-building)
+  - [1. Install Dependencies](#1-install-dependencies)
+  - [2. Build the Application](#2-build-the-application)
+  - [3. Run a Tutorial](#3-run-a-tutorial)
+
 ## Tutorials
 
 All tutorials are compiled into a single executable (`glib-tutorials`). A specific tutorial is run by providing its name as a command-line argument.
