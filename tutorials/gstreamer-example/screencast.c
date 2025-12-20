@@ -2,6 +2,7 @@
 #include "../common/utils.h"
 #include "gio/gio.h"
 #include "glib.h"
+#include <gst/gst.h>
 
 #define PORTAL_BUS_NAME "org.freedesktop.portal.Desktop"
 #define PORTAL_OBJECT_PATH "/org/freedesktop/portal/desktop"
@@ -26,6 +27,57 @@ static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
                                const gchar *interface_name,
                                const gchar *signal_name, GVariant *parameters,
                                gpointer user_data);
+
+static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
+  GMainLoop *loop = (GMainLoop *)data;
+  switch (GST_MESSAGE_TYPE(msg)) {
+  case GST_MESSAGE_ERROR: {
+    gchar *debug;
+    GError *error;
+    gst_message_parse_error(msg, &error, &debug);
+    g_printerr("\nERROR: %s\n", error->message);
+    if (debug) g_printerr("Debug Info: %s\n", debug);
+    g_error_free(error);
+    g_free(debug);
+    g_main_loop_quit(loop);
+    break;
+  }
+  default:
+    break;
+  }
+  return TRUE;
+}
+
+static void start_stream(guint32 id,ScreencastState *state){
+  g_print("\n>>> GStreamer Baslatiliyor... Node ID: %d\n", id);
+  GstElement *pipeline;
+  gst_init(NULL, NULL);
+  char *pipeline_str =
+      g_strdup_printf("pipewiresrc path=%u do-timestamp=true ! "
+                      "queue max-size-buffers=3 leaky=downstream ! "
+                      "videoconvert ! "
+                      "queue ! "
+                      "nvh264enc preset=low-latency-hq ! h264parse ! "
+                      "matroskamux ! filesink location=capture.mkv",
+                      id);
+
+  GError *error = NULL;
+  pipeline = gst_parse_launch(pipeline_str, &error);
+  g_free(pipeline_str);
+
+  if (error) {
+    g_printerr("Pipeline Hatasi: %s\n", error->message);
+    g_error_free(error);
+    g_main_loop_quit(state->loop);
+    return;
+  }
+
+  GstBus *bus = gst_element_get_bus(pipeline);
+  gst_bus_add_watch(bus, bus_call, state->loop);
+  gst_object_unref(bus);
+
+  gst_element_set_state(pipeline, GST_STATE_PLAYING);
+}
 
 static void start_screencast(ScreencastState *state) {
   gchar *token_start = generate_token("tk_start");
@@ -62,7 +114,29 @@ static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
   guint32 response_code;
   GVariant *res;
   g_variant_get(parameters, "(u@a{sv})", &response_code, &res);
-  g_main_loop_quit(state->loop);
+  if (response_code != 0) {
+    g_printerr("Couldn't get the proper response code for starting screencast.\n");
+    g_main_loop_quit(state->loop);
+    g_variant_unref(res);
+    g_main_loop_quit(state->loop);
+  }
+  GVariant *streams =
+    g_variant_lookup_value(res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
+  if (streams == NULL)
+  {
+    g_printerr("No streams found in the response.\n");
+    g_variant_unref(res);    
+    g_main_loop_quit(state->loop);
+  }
+  GVariantIter iter;
+  g_variant_iter_init(&iter, streams);
+  guint32 stream_id;
+  if(g_variant_iter_next(&iter, "(u@a{sv})", &stream_id, NULL)) {
+    start_stream(stream_id,state);
+  } else {
+    g_printerr("No valid stream options found.\n");
+  }
+
 }
 
 static void on_select_response(GDBusConnection *conn, const gchar *sender_name,

@@ -8,6 +8,9 @@ project(
 glib_dep = dependency('glib-2.0')
 gobject_dep = dependency('gobject-2.0')
 gio_dep = dependency('gio-2.0')
+gst_dep = dependency('gstreamer-1.0')
+gst_video_dep = dependency('gstreamer-video-1.0')
+gst_webrtc_dep = dependency('gstreamer-webrtc-1.0')
 
 gio_unix_dep = dependency('gio-unix-2.0', required: false)
 
@@ -23,6 +26,6 @@ src_files = [
 executable(
   'glib-tutorials',
   src_files,
-  dependencies: [glib_dep, gobject_dep, gio_dep, gio_unix_dep],
+  dependencies: [glib_dep, gobject_dep, gio_dep, gio_unix_dep,gst_dep,gst_video_dep, gst_webrtc_dep],
   install: true,
 )
