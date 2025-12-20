@@ -15,14 +15,14 @@ The repository is organized into a main application and several tutorial modules
 
 ```
 .
-├── main.c              # Main application entry point that dispatches tutorials
-├── meson.build         # The main build configuration for Meson
+├── main.c                  # Main application entry point that dispatches tutorials
+├── meson.build             # The main build configuration for Meson
 ├── tutorials/
-│   ├── common/         # Utility functions shared across tutorials
-│   ├── gio-example/    # GIO examples (D-Bus communication)
-│   ├── gobject-example/# GObject system tutorial
-│   ├── gstreamer-example/ # GStreamer-related portal examples
-│   └── timeout-example/  # GLib main loop and timeout example
+│   ├── common/             # Utility functions shared across tutorials
+│   ├── gio-example/        # GIO examples (D-Bus communication)
+│   ├── gobject-example/    # GObject system tutorial
+│   ├── gstreamer-example/  # GStreamer-related portal examples
+│   └── timeout-example/    # GLib main loop and timeout example
 └── ...
 ```
 
