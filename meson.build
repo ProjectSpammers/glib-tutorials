@@ -21,7 +21,7 @@ src_files = [
 ]
 
 executable(
-  'glib_app',
+  'glib-tutorials',
   src_files,
   dependencies: [glib_dep, gobject_dep, gio_dep, gio_unix_dep],
   install: true,
