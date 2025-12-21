@@ -2,9 +2,9 @@
 #include "../common/utils.h"
 #include "gio/gio.h"
 #include "glib.h"
+#include <glib/gstdio.h>
 #include <gst/gst.h>
 #include <stdio.h>
-#include <glib/gstdio.h>
 #include <string.h>
 
 #define PORTAL_BUS_NAME "org.freedesktop.portal.Desktop"
@@ -85,8 +85,16 @@ static void start_stream(guint32 id, ScreencastState *state) {
       // --- VIDEO ---
       "pipewiresrc path=%u do-timestamp=true ! "
       "queue max-size-buffers=3 leaky=downstream ! "
-      "videoconvert ! "
-      "nvh264enc preset=low-latency-hq ! h264parse ! "
+      "videoscale ! videorate ! "
+      "video/x-raw,width=1920,height=1080,framerate=60/1 ! "
+      "nvh264enc "
+      "bitrate=10000 "          // 4 Mbps (Adjust for quality vs bandwidth)
+      "rc-mode=cbr "            // Constant Bitrate for steady network flow
+      "preset=low-latency-hq "  // NVIDIA-specific low latency
+      "tune=ultra-low-latency " // Minimizes internal buffering
+      "gop-size=60 "            // Keyframe every 60 frames (1 second at 60fps)
+      "zerolatency=true ! "     // Disable B-frames (critical for latency)
+      "h264parse ! "
       "queue ! mux.video_0 "
 
       // --- AUDIO ---
@@ -98,6 +106,7 @@ static void start_stream(guint32 id, ScreencastState *state) {
       "opusenc ! "
       "queue ! mux.audio_0",
       state->output_path, id, audio_device);
+  g_free(audio_device);
 
   GError *error = NULL;
   pipeline = gst_parse_launch(pipeline_str, &error);
@@ -174,6 +183,7 @@ static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
   } else {
     g_printerr("No valid stream options found.\n");
   }
+  g_variant_unref(streams);
 }
 
 static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
@@ -193,8 +203,7 @@ static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
   start_screencast(state);
 }
 
-static void select_sources(ScreencastState *state,
-                           const gchar *token_session) {
+static void select_sources(ScreencastState *state, const gchar *token_session) {
   gchar *token_select = generate_token("tk_slct");
 
   const gchar *unique_name =
@@ -215,9 +224,8 @@ static void select_sources(ScreencastState *state,
 
   g_print("Waiting for screen selection\n");
 
-  gchar *request_path =
-      g_strdup_printf("%s/request/%s/%s", PORTAL_OBJECT_PATH,
-                      state->sanitized_name, token_select);
+  gchar *request_path = g_strdup_printf("%s/request/%s/%s", PORTAL_OBJECT_PATH,
+                                        state->sanitized_name, token_select);
   g_dbus_connection_signal_subscribe(
       state->connection, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response",
       request_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_select_response, state,
@@ -259,15 +267,14 @@ static gchar *create_session(ScreencastState *state) {
   return token_session;
 }
 
-
 static gboolean on_stdin_input(GIOChannel *channel, GIOCondition condition,
                                gpointer user_data) {
   ScreencastState *state = user_data;
   gchar *input = NULL;
   GIOStatus status;
 
-  // We are watching for G_IO_IN, but G_IO_HUP and G_IO_ERR can also be
-  // reported.
+  /* We are watching for G_IO_IN, but G_IO_HUP and G_IO_ERR can also be
+     reported. */
   if (condition & (G_IO_HUP | G_IO_ERR)) {
     g_main_loop_quit(state->loop);
     return FALSE;
@@ -337,8 +344,8 @@ void screencast_tutorial(int argc, char *argv[]) {
     g_free(output_file);
   }
 
-  g_print("Starting screencast tutorial. Outputting to: %s\n", state->output_path);
-
+  g_print("Starting screencast tutorial. Outputting to: %s\n",
+          state->output_path);
 
   state->connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
 
