@@ -55,7 +55,7 @@ static gchar* get_default_monitor_source() {
 
     fp = popen("pactl get-default-sink", "r");
     if (fp == NULL) {
-        g_printerr("Ses cihazi bilgisi alinamadi (pactl hatasi).\n");
+        g_printerr("Failed to get audio device information (pactl error).\n");
         return NULL;
     }
 
@@ -71,7 +71,7 @@ static gchar* get_default_monitor_source() {
 }
 
 static void start_stream(guint32 id,ScreencastState *state){
-  g_print("\n>>> GStreamer Baslatiliyor... Node ID: %d\n", id);
+  g_print("\n>>> Starting GStreamer... Node ID: %d\n", id);
   GstElement *pipeline;
   gst_init(NULL, NULL);
   gchar *audio_device = get_default_monitor_source();
@@ -86,10 +86,10 @@ static void start_stream(guint32 id,ScreencastState *state){
       "queue ! mux.video_0 "
       
       // --- AUDIO ---
-      // buffer-time=200000: 200ms buffer, takılmaları önler
+      // buffer-time=200000: 200ms buffer, prevents stuttering
       "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! " 
       "audioconvert ! "
-      "audioresample ! " // ÖNEMLİ: Farklı örnekleme hızlarını (44.1/48k) çevirir
+      "audioresample ! " // IMPORTANT: Converts different sample rates (44.1/48k)
       "opusenc ! "
       "queue ! mux.audio_0",
       id,audio_device);
@@ -99,7 +99,7 @@ static void start_stream(guint32 id,ScreencastState *state){
   g_free(pipeline_str);
 
   if (error) {
-    g_printerr("Pipeline Hatasi: %s\n", error->message);
+    g_printerr("Pipeline Error: %s\n", error->message);
     g_error_free(error);
     g_main_loop_quit(state->loop);
     return;
