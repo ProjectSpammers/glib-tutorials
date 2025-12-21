@@ -3,6 +3,7 @@
 #include "gio/gio.h"
 #include "glib.h"
 #include <gst/gst.h>
+#include <stdio.h>
 
 #define PORTAL_BUS_NAME "org.freedesktop.portal.Desktop"
 #define PORTAL_OBJECT_PATH "/org/freedesktop/portal/desktop"
@@ -48,18 +49,50 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
   return TRUE;
 }
 
+static gchar* get_default_monitor_source() {
+    FILE *fp;
+    char path[1024];
+
+    fp = popen("pactl get-default-sink", "r");
+    if (fp == NULL) {
+        g_printerr("Ses cihazi bilgisi alinamadi (pactl hatasi).\n");
+        return NULL;
+    }
+
+    if (fgets(path, sizeof(path) - 1, fp) != NULL) {
+        path[strcspn(path, "\n")] = 0;
+        path[strcspn(path, "\r")] = 0;
+    } else {
+        pclose(fp);
+        return NULL;
+    }
+    pclose(fp);
+    return g_strdup_printf("%s.monitor", path);
+}
+
 static void start_stream(guint32 id,ScreencastState *state){
   g_print("\n>>> GStreamer Baslatiliyor... Node ID: %d\n", id);
   GstElement *pipeline;
   gst_init(NULL, NULL);
-  char *pipeline_str =
-      g_strdup_printf("pipewiresrc path=%u do-timestamp=true ! "
-                      "queue max-size-buffers=3 leaky=downstream ! "
-                      "videoconvert ! "
-                      "queue ! "
-                      "nvh264enc preset=low-latency-hq ! h264parse ! "
-                      "matroskamux ! filesink location=capture.mkv",
-                      id);
+  gchar *audio_device = get_default_monitor_source();
+  char *pipeline_str = g_strdup_printf(
+      "matroskamux name=mux ! filesink location=capture.mkv "
+      
+      // --- VIDEO ---
+      "pipewiresrc path=%u do-timestamp=true ! "
+      "queue max-size-buffers=3 leaky=downstream ! "
+      "videoconvert ! "
+      "nvh264enc preset=low-latency-hq ! h264parse ! "
+      "queue ! mux.video_0 "
+      
+      // --- AUDIO ---
+      // buffer-time=200000: 200ms buffer, takılmaları önler
+      "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! " 
+      "audioconvert ! "
+      "audioresample ! " // ÖNEMLİ: Farklı örnekleme hızlarını (44.1/48k) çevirir
+      "opusenc ! "
+      "queue ! mux.audio_0",
+      id,audio_device);
 
   GError *error = NULL;
   pipeline = gst_parse_launch(pipeline_str, &error);
