@@ -6,22 +6,16 @@ This project is structured as a series of hands-on tutorials, each exploring a d
 
 ## Contents
 
-- [Team](#team)
 - [Project Structure](#project-structure)
 - [Tutorials](#tutorials)
   - [1. GLib: The Main Event Loop (`timeout`)](#1-glib-the-main-event-loop-timeout)
   - [2. GObject: The Type System (`gobject-get-set`)](#2-gobject-the-type-system-gobject-get-set)
   - [3. GIO: D-Bus Communication](#3-gio-d-bus-communication)
-  - [4. Common Utilities (`common`)](#4-common-utilities-common)
 - [Installation and Building](#installation-and-building)
   - [1. Install Dependencies](#1-install-dependencies)
   - [2. Build the Application](#2-build-the-application)
   - [3. Run a Tutorial](#3-run-a-tutorial)
-
-## Team
-
-*   [Onurcan](https://github.com/onrcn)
-*   [Ahmet](https://github.com/ahmetyaka)
+- [Team](#team)
 
 ## Project Structure
 
@@ -32,7 +26,6 @@ The repository is organized into a main application and several tutorial modules
 ├── main.c                  # Main application entry point that dispatches tutorials
 ├── meson.build             # The main build configuration for Meson
 ├── tutorials/
-│   ├── common/             # Utility functions shared across tutorials
 │   ├── gio-example/        # GIO examples (D-Bus communication)
 │   ├── gobject-example/    # GObject system tutorial
 │   ├── gstreamer-example/  # GStreamer-related portal examples
@@ -79,23 +72,29 @@ GIO provides a high-level API for I/O, networking, and IPC, including D-Bus.
     2.  **Select Sources:** Opens the desktop environment's dialog for the user to select which screen/window to share.
     3.  **Start Cast:** Starts the screencast and waits for the session to be ready.
     4.  It makes heavy use of asynchronous D-Bus calls and signal subscriptions within the `GMainLoop`.
-
-### 4. Common Utilities (`common`)
-
-*   **File:** `tutorials/common/utils.c`
-*   **Purpose:** Provides helper functions used in other tutorials, such as `generate_token()` for creating unique request handles for portal communication.
+*   **Options:**
+    *   `--output <FILE>` or `-o <FILE>`: Specifies the output file path for the screen recording. Defaults to `capture.mkv` in the current working directory.
 
 ## Installation and Building
 
 ### 1. Install Dependencies
 
-You will need a C compiler, Meson, Ninja, and the development files for GLib. For the `screencast` tutorial to function, you also need a Freedesktop portal implementation installed (e.g., `xdg-desktop-portal-gtk`).
+You will need a C compiler, Meson, Ninja, and the development files for GLib and GStreamer.
+
+*   **GLib & Build Tools**: `glib2.0`, `meson`, `ninja`
+*   **GStreamer**: `gstreamer-1.0` and the following plugin packages:
+    *   `gstreamer-plugins-base`
+    *   `gstreamer-plugins-good`
+    *   `gstreamer-plugins-bad`
+    *   `gstreamer-plugins-ugly`
+    *   `libgstreamer-plugins-base1.0-dev` (for development headers)
+*   **Portal Implementation**: For the `screencast` tutorial, you also need a Freedesktop portal implementation installed (e.g., `xdg-desktop-portal-gtk`).
 
 <details>
 <summary><b>Debian / Ubuntu</b></summary>
 
 ```bash
-sudo apt-get install build-essential libglib2.0-dev meson ninja-build xdg-desktop-portal-gtk
+sudo apt-get install build-essential libglib2.0-dev meson ninja-build xdg-desktop-portal-gtk gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-tools libgstreamer-plugins-base1.0-dev
 ```
 
 </details>
@@ -104,7 +103,7 @@ sudo apt-get install build-essential libglib2.0-dev meson ninja-build xdg-deskto
 <summary><b>Fedora</b></summary>
 
 ```bash
-sudo dnf install gcc glib2-devel meson ninja-build xdg-desktop-portal-gtk
+sudo dnf install gcc glib2-devel meson ninja-build xdg-desktop-portal-gtk gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-devel
 ```
 
 </details>
@@ -113,7 +112,7 @@ sudo dnf install gcc glib2-devel meson ninja-build xdg-desktop-portal-gtk
 <summary><b>Arch Linux</b></summary>
 
 ```bash
-sudo pacman -S base-devel glib2 meson ninja xdg-desktop-portal-gtk
+sudo pacman -S base-devel glib2 meson ninja xdg-desktop-portal-gtk gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gstreamer
 ```
 
 </details>
@@ -149,6 +148,11 @@ The final executable is created in the `build` directory. Run it without argumen
 To run a specific tutorial, provide its name as an argument. For example:
 
 ```bash
-# Run the screencast portal example
-./build/glib-tutorials screencast
+# Run the screencast portal example and save to a custom file
+./build/glib-tutorials screencast --output my_recording.mkv
 ```
+
+## Team
+
+*   [Onurcan](https://github.com/onrcn)
+*   [Ahmet](https://github.com/ahmetyaka)
