@@ -75,7 +75,7 @@ gint example_person_get_age(ExamplePerson *self) { return self->age; }
 
 // Setters
 void example_person_set_name(ExamplePerson *self, const gchar *name) {
-  if (g_strcmp0(name, self->name) == 0) {
+  if (g_strcmp0(name, self->name) != 0) {
     g_free(self->name);
     self->name = g_strdup(name);
   }
@@ -83,7 +83,9 @@ void example_person_set_name(ExamplePerson *self, const gchar *name) {
 
 void example_person_set_age(ExamplePerson *self, gint age) { self->age = age; }
 
-void gobject_tutorial_get_set(void) {
+void gobject_tutorial_get_set(int argc, char *argv[]) {
+  G_GNUC_UNUSED int _argc = argc;
+  G_GNUC_UNUSED char **_argv = argv;
   ExamplePerson *ahmet = example_person_new();
 
   g_print("Running setters\n\n--------------");

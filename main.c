@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef void (*TutorialFunc)();
+typedef void (*TutorialFunc)(int, char **);
 
 typedef struct {
   const char *name; // command name
@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
     if (strcmp(argv[1], tutorials[i].name) == 0) {
       printf("Running tutorial: %s\n", tutorials[i].name);
 
-      tutorials[i].func();
+      tutorials[i].func(argc - 1, argv + 1);
 
       found = TRUE;
       break;

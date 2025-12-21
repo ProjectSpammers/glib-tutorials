@@ -26,6 +26,14 @@ src_files = [
 executable(
   'glib-tutorials',
   src_files,
-  dependencies: [glib_dep, gobject_dep, gio_dep, gio_unix_dep,gst_dep,gst_video_dep, gst_webrtc_dep],
+  dependencies: [
+    glib_dep,
+    gobject_dep,
+    gio_dep,
+    gio_unix_dep,
+    gst_dep,
+    gst_video_dep,
+    gst_webrtc_dep,
+  ],
   install: true,
 )
