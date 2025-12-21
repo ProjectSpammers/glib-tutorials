@@ -5,6 +5,7 @@
 #include <gst/gst.h>
 #include <stdio.h>
 #include <glib/gstdio.h>
+#include <string.h>
 
 #define PORTAL_BUS_NAME "org.freedesktop.portal.Desktop"
 #define PORTAL_OBJECT_PATH "/org/freedesktop/portal/desktop"
@@ -258,6 +259,40 @@ static gchar *create_session(ScreencastState *state) {
   return token_session;
 }
 
+
+static gboolean on_stdin_input(GIOChannel *channel, GIOCondition condition,
+                               gpointer user_data) {
+  ScreencastState *state = user_data;
+  gchar *input = NULL;
+  GIOStatus status;
+
+  // We are watching for G_IO_IN, but G_IO_HUP and G_IO_ERR can also be
+  // reported.
+  if (condition & (G_IO_HUP | G_IO_ERR)) {
+    g_main_loop_quit(state->loop);
+    return FALSE;
+  }
+
+  status = g_io_channel_read_line(channel, &input, NULL, NULL, NULL);
+
+  if (status == G_IO_STATUS_NORMAL) {
+    if (strcmp(g_strchomp(input), "exit") == 0) {
+      g_print("\nExit command received. Stopping screencast.\n");
+      g_main_loop_quit(state->loop);
+      g_free(input);
+      return FALSE; // Stop watching
+    }
+  } else {
+    // This could be EOF or an error. In either case, we stop.
+    g_main_loop_quit(state->loop);
+    g_free(input);
+    return FALSE; // Stop watching
+  }
+
+  g_free(input);
+  return TRUE; // Continue watching
+}
+
 static void screencast_state_free(ScreencastState *state) {
   if (state == NULL) {
     return;
@@ -317,6 +352,11 @@ void screencast_tutorial(int argc, char *argv[]) {
 
   state->loop = g_main_loop_new(NULL, FALSE);
 
+  GIOChannel *stdin_channel = g_io_channel_unix_new(fileno(stdin));
+  g_io_add_watch(stdin_channel, G_IO_IN | G_IO_HUP | G_IO_ERR, on_stdin_input,
+                 state);
+  g_io_channel_unref(stdin_channel);
+
   gchar *token_session = create_session(state);
   if (token_session == NULL) {
     screencast_state_free(state);
@@ -327,6 +367,7 @@ void screencast_tutorial(int argc, char *argv[]) {
 
   g_free(token_session);
 
+  g_print("\nType 'exit' and press Enter to stop the recording at any time.\n");
   g_main_loop_run(state->loop);
 
   screencast_state_free(state);
