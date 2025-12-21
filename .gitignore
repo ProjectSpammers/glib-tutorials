@@ -4,6 +4,8 @@
 build/
 builddir/
 
+captures/
+
 compile_commands.json
 GEMINI.md
 capture.mkv
