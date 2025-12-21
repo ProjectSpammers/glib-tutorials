@@ -4,6 +4,7 @@
 #include "glib.h"
 #include <gst/gst.h>
 #include <stdio.h>
+#include <glib/gstdio.h>
 
 #define PORTAL_BUS_NAME "org.freedesktop.portal.Desktop"
 #define PORTAL_OBJECT_PATH "/org/freedesktop/portal/desktop"
@@ -15,6 +16,7 @@ typedef struct {
   GDBusConnection *connection;
   gchar *sanitized_name;
   gchar *session_path;
+  gchar *output_path;
 } ScreencastState;
 
 static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
@@ -37,7 +39,8 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
     GError *error;
     gst_message_parse_error(msg, &error, &debug);
     g_printerr("\nERROR: %s\n", error->message);
-    if (debug) g_printerr("Debug Info: %s\n", debug);
+    if (debug)
+      g_printerr("Debug Info: %s\n", debug);
     g_error_free(error);
     g_free(debug);
     g_main_loop_quit(loop);
@@ -49,50 +52,51 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
   return TRUE;
 }
 
-static gchar* get_default_monitor_source() {
-    FILE *fp;
-    char path[1024];
+static gchar *get_default_monitor_source() {
+  FILE *fp;
+  char path[1024];
 
-    fp = popen("pactl get-default-sink", "r");
-    if (fp == NULL) {
-        g_printerr("Failed to get audio device information (pactl error).\n");
-        return NULL;
-    }
+  fp = popen("pactl get-default-sink", "r");
+  if (fp == NULL) {
+    g_printerr("Failed to get audio device information (pactl error).\n");
+    return NULL;
+  }
 
-    if (fgets(path, sizeof(path) - 1, fp) != NULL) {
-        path[strcspn(path, "\n")] = 0;
-        path[strcspn(path, "\r")] = 0;
-    } else {
-        pclose(fp);
-        return NULL;
-    }
+  if (fgets(path, sizeof(path) - 1, fp) != NULL) {
+    path[strcspn(path, "\n")] = 0;
+    path[strcspn(path, "\r")] = 0;
+  } else {
     pclose(fp);
-    return g_strdup_printf("%s.monitor", path);
+    return NULL;
+  }
+  pclose(fp);
+  return g_strdup_printf("%s.monitor", path);
 }
 
-static void start_stream(guint32 id,ScreencastState *state){
+static void start_stream(guint32 id, ScreencastState *state) {
   g_print("\n>>> Starting GStreamer... Node ID: %d\n", id);
   GstElement *pipeline;
   gst_init(NULL, NULL);
   gchar *audio_device = get_default_monitor_source();
   char *pipeline_str = g_strdup_printf(
-      "matroskamux name=mux ! filesink location=capture.mkv "
-      
+      "matroskamux name=mux ! filesink location=%s "
+
       // --- VIDEO ---
       "pipewiresrc path=%u do-timestamp=true ! "
       "queue max-size-buffers=3 leaky=downstream ! "
       "videoconvert ! "
       "nvh264enc preset=low-latency-hq ! h264parse ! "
       "queue ! mux.video_0 "
-      
+
       // --- AUDIO ---
       // buffer-time=200000: 200ms buffer, prevents stuttering
-      "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! " 
+      "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! "
       "audioconvert ! "
-      "audioresample ! " // IMPORTANT: Converts different sample rates (44.1/48k)
+      "audioresample ! " // IMPORTANT: Converts different sample rates
+                         // (44.1/48k)
       "opusenc ! "
       "queue ! mux.audio_0",
-      id,audio_device);
+      state->output_path, id, audio_device);
 
   GError *error = NULL;
   pipeline = gst_parse_launch(pipeline_str, &error);
@@ -148,28 +152,27 @@ static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
   GVariant *res;
   g_variant_get(parameters, "(u@a{sv})", &response_code, &res);
   if (response_code != 0) {
-    g_printerr("Couldn't get the proper response code for starting screencast.\n");
+    g_printerr(
+        "Couldn't get the proper response code for starting screencast.\n");
     g_main_loop_quit(state->loop);
     g_variant_unref(res);
     g_main_loop_quit(state->loop);
   }
   GVariant *streams =
-    g_variant_lookup_value(res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
-  if (streams == NULL)
-  {
+      g_variant_lookup_value(res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
+  if (streams == NULL) {
     g_printerr("No streams found in the response.\n");
-    g_variant_unref(res);    
+    g_variant_unref(res);
     g_main_loop_quit(state->loop);
   }
   GVariantIter iter;
   g_variant_iter_init(&iter, streams);
   guint32 stream_id;
-  if(g_variant_iter_next(&iter, "(u@a{sv})", &stream_id, NULL)) {
-    start_stream(stream_id,state);
+  if (g_variant_iter_next(&iter, "(u@a{sv})", &stream_id, NULL)) {
+    start_stream(stream_id, state);
   } else {
     g_printerr("No valid stream options found.\n");
   }
-
 }
 
 static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
@@ -263,21 +266,52 @@ static void screencast_state_free(ScreencastState *state) {
   g_main_loop_unref(state->loop);
   g_free(state->sanitized_name);
   g_free(state->session_path);
+  g_free(state->output_path);
   g_free(state);
 }
 
-void screencast_tutorial() {
+static gchar *output_file = NULL;
+
+static GOptionEntry entries[] = {
+    {"output", 'o', 0, G_OPTION_ARG_STRING, &output_file,
+     "Output file path (default: $PWD/capture.mkv)", "FILE"},
+    {NULL}};
+
+void screencast_tutorial(int argc, char *argv[]) {
   ScreencastState *state = g_new0(ScreencastState, 1);
-
-  g_print("Starting screencast tutorial.\n");
-
+  GOptionContext *context;
   GError *error = NULL;
+
+  context = g_option_context_new("- screencast utility");
+  g_option_context_add_main_entries(context, entries, NULL);
+
+  if (!g_option_context_parse(context, &argc, &argv, &error)) {
+    g_print("option parsing failed: %s\n", error->message);
+    g_option_context_free(context);
+    g_free(state);
+    return;
+  }
+  g_option_context_free(context);
+
+  if (output_file == NULL) {
+    gchar *current_dir = g_get_current_dir();
+    state->output_path = g_build_filename(current_dir, "capture.mkv", NULL);
+    g_free(current_dir);
+  } else {
+    state->output_path = g_strdup(output_file);
+    g_free(output_file);
+  }
+
+  g_print("Starting screencast tutorial. Outputting to: %s\n", state->output_path);
+
+
   state->connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
 
   if (error) {
     g_printerr("Connection error: %s\n", error->message);
     g_error_free(error);
-    g_free(state);
+
+    screencast_state_free(state);
     return;
   }
 

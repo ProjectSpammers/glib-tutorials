@@ -1,6 +1,8 @@
 #include "notification-sender.h"
 
-void send_notification() {
+void send_notification(int argc, char *argv[]) {
+  G_GNUC_UNUSED int _argc = argc;
+  G_GNUC_UNUSED char **_argv = argv;
   GError *error = NULL;
   GDBusConnection *connection =
       g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);

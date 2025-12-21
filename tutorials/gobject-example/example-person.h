@@ -23,6 +23,6 @@ void example_person_set_name(ExamplePerson *self, const gchar *name);
 void example_person_set_age(ExamplePerson *self, gint age);
 
 // Tutorial function
-void gobject_tutorial_get_set(void);
+void gobject_tutorial_get_set(int argc, char *argv[]);
 
 #endif

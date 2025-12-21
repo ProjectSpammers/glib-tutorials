@@ -19,7 +19,9 @@ static gboolean trying_timeout(gpointer user_data) {
   return G_SOURCE_CONTINUE;
 }
 
-void timeout_tutorial() {
+void timeout_tutorial(int argc, char *argv[]) {
+  G_GNUC_UNUSED int _argc = argc;
+  G_GNUC_UNUSED char **_argv = argv;
   GMainLoop *loop = g_main_loop_new(NULL, FALSE);
 
   printf("Starting timeout tutorial. Will run for 5 seconds.\n");
