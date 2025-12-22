@@ -22,7 +22,7 @@ void send_notification(int argc, char *argv[]) {
                 NULL, NULL);
   g_print("Getting a single s: %s\n\n", str);
 
-  free(str);
+  g_free(str);
 
   GVariant *results = g_dbus_connection_call_sync(
       connection, "org.freedesktop.Notifications",
