@@ -85,6 +85,7 @@ static void start_stream(guint32 id, ScreencastState *state) {
       // --- VIDEO ---
       "pipewiresrc path=%u do-timestamp=true ! "
       "queue max-size-buffers=3 leaky=downstream ! "
+      "videoconvert ! "
       "videoscale ! videorate ! "
       "video/x-raw,width=1920,height=1080,framerate=60/1 ! "
       "nvh264enc "
@@ -304,6 +305,10 @@ static void screencast_state_free(ScreencastState *state) {
   if (state == NULL) {
     return;
   }
+  g_dbus_connection_call(state->connection, PORTAL_BUS_NAME,
+                         state->session_path, // The path to the session object
+                         "org.freedesktop.portal.Session", "Close", NULL, NULL,
+                         G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
   g_object_unref(state->connection);
   g_main_loop_unref(state->loop);
   g_free(state->sanitized_name);
