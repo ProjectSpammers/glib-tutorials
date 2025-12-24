@@ -77,6 +77,9 @@ All tutorials are compiled into a single executable (`glib-tutorials`). A specif
 - **Options:**
     - `--output <FILE>` or `-o <FILE>`: Specifies the output file path for the screen recording. Defaults to `capture.mkv` in the current working directory.
 
+**DISCLAIMER**: The `screencast` tutorial is designed to work exclusively with NVIDIA graphics cards that support CUDA for hardware-accelerated video encoding. This tutorial requires the `nvidia`, `nvidia-utils`, `cuda`, and related proprietary packages to be installed and fully functional on your system. It does not support AMD, Intel, or other integrated graphics solutions due to its reliance on NVIDIA's specific encoding capabilities.
+
+
 ## Installation and Building
 
 ### 1. Install Dependencies
