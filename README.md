@@ -1,6 +1,6 @@
 # Learning GLib, GIO, and GStreamer with Meson
 
-This repository documents our journey of learning the GLib family of libraries (GLib, GObject, GIO), GStreamer, and the Meson build system. The ultimate goal is to gain the proficiency needed to develop a GStreamer-based streaming application.
+This repository documents our journey of learning the GLib family of libraries (GLib, GObject, GIO), GStreamer, and the Meson build system.
 
 This project is structured as a series of hands-on tutorials, each exploring a different aspect of the GLib/GStreamer ecosystem.
 
