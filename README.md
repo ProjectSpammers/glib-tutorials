@@ -1,8 +1,8 @@
 # Learning GLib, GIO, and GStreamer with Meson
 
-This repository documents our journey of learning the GLib family of libraries (GLib, GObject, GIO) and the Meson build system. The ultimate goal is to gain the proficiency needed to develop a GStreamer-based streaming application.
+This repository documents our journey of learning the GLib family of libraries (GLib, GObject, GIO), GStreamer, and the Meson build system. The ultimate goal is to gain the proficiency needed to develop a GStreamer-based streaming application.
 
-This project is structured as a series of hands-on tutorials, each exploring a different aspect of the GLib ecosystem.
+This project is structured as a series of hands-on tutorials, each exploring a different aspect of the GLib/GStreamer ecosystem.
 
 ## Contents
 
@@ -10,7 +10,8 @@ This project is structured as a series of hands-on tutorials, each exploring a d
 - [Tutorials](#tutorials)
   - [1. GLib: The Main Event Loop (`timeout`)](#1-glib-the-main-event-loop-timeout)
   - [2. GObject: The Type System (`gobject-get-set`)](#2-gobject-the-type-system-gobject-get-set)
-  - [3. GIO: D-Bus Communication](#3-gio-d-bus-communication)
+  - [3. GIO: Sending D-Bus Notifications (`dbus-notification`)](#3-gio-sending-d-bus-notifications-dbus-notification)
+  - [4. GStreamer & Portals: Screen Recording (`screencast`)](#4-gstreamer--portals-screen-recording-screencast)
 - [Installation and Building](#installation-and-building)
   - [1. Install Dependencies](#1-install-dependencies)
   - [2. Build the Application](#2-build-the-application)
@@ -26,6 +27,7 @@ The repository is organized into a main application and several tutorial modules
 ├── main.c                  # Main application entry point that dispatches tutorials
 ├── meson.build             # The main build configuration for Meson
 ├── tutorials/
+│   ├── common/             # Common utility functions
 │   ├── gio-example/        # GIO examples (D-Bus communication)
 │   ├── gobject-example/    # GObject system tutorial
 │   ├── gstreamer-example/  # GStreamer-related portal examples
@@ -39,41 +41,41 @@ All tutorials are compiled into a single executable (`glib-tutorials`). A specif
 
 ### 1. GLib: The Main Event Loop (`timeout`)
 
-*   **File:** `tutorials/timeout-example/timeout.c`
-*   **Concept:** Demonstrates the basics of the `GMainLoop`.
-*   **Implementation:** Uses `g_timeout_add()` to schedule a function to be called every second for five seconds. This is a fundamental concept for any event-driven application using GLib.
+- **Command:** `timeout`
+- **File:** `tutorials/timeout-example/timeout.c`
+- **Concept:** Demonstrates the basics of the `GMainLoop`.
+- **Implementation:** Uses `g_timeout_add()` to schedule a function to be called every second for five seconds. This is a fundamental concept for any event-driven application using GLib.
 
 ### 2. GObject: The Type System (`gobject-get-set`)
 
-*   **Files:** `tutorials/gobject-example/example-person.c`
-*   **Concept:** Introduces the GObject type and object system.
-*   **Implementation:** Defines a new `ExamplePerson` class that inherits from `GObject`. The example covers:
-    *   Defining a class structure with public and private members.
-    *   Creating properties (`GParamSpec`) for getter/setter access.
-    *   Registering and using signals.
-    *   Instantiating the object and interacting with its properties.
+- **Command:** `gobject-get-set`
+- **Files:** `tutorials/gobject-example/example-person.c`
+- **Concept:** Introduces the GObject type and object system.
+- **Implementation:** Defines a new `ExamplePerson` class that inherits from `GObject`. The example covers:
+    - Defining a class structure with public and private members.
+    - Creating properties (`GParamSpec`) for getter/setter access.
+    - Registering and using signals.
+    - Instantiating the object and interacting with its properties.
 
-### 3. GIO: D-Bus Communication
+### 3. GIO: Sending D-Bus Notifications (`dbus-notification`)
 
-GIO provides a high-level API for I/O, networking, and IPC, including D-Bus.
+- **Command:** `dbus-notification`
+- **File:** `tutorials/gio-example/notification-sender.c`
+- **Concept:** Shows how to communicate with other services over the D-Bus session bus using GIO.
+- **Implementation:** Sends a desktop notification by calling the `Notify` method on the `org.freedesktop.Notifications` service. It demonstrates creating a `GDBusConnection` and using it to call a remote method with parameters (`GVariant`).
 
-#### Sending Desktop Notifications (`dbus-notification`)
+### 4. GStreamer & Portals: Screen Recording (`screencast`)
 
-*   **File:** `tutorials/gio-example/notification-sender.c`
-*   **Concept:** Shows how to communicate with other services over the D-Bus session bus.
-*   **Implementation:** Sends a desktop notification by calling the `Notify` method on the `org.freedesktop.Notifications` service. It demonstrates creating a `GDBusConnection` and using it to call a remote method with parameters (`GVariant`).
-
-#### Screen Sharing with Portals (`screencast`)
-
-*   **File:** `tutorials/gstreamer-example/screencast.c`
-*   **Concept:** An advanced example that interacts with the Freedesktop Portals API to set up a screen sharing session. This is a necessary step for sandboxed applications to access resources like the screen.
-*   **Implementation:** This tutorial walks through the entire portal screencasting flow:
-    1.  **Create a Session:** Initiates a `CreateSession` request.
+- **Command:** `screencast`
+- **File:** `tutorials/gstreamer-example/screencast.c`
+- **Concept:** An advanced example that interacts with the Freedesktop Portals API to set up a screen sharing session and record it with GStreamer. This is a necessary step for sandboxed applications to access resources like the screen.
+- **Implementation:** This tutorial walks through the entire portal screencasting flow:
+    1.  **Create a Session:** Initiates a `CreateSession` request via D-Bus.
     2.  **Select Sources:** Opens the desktop environment's dialog for the user to select which screen/window to share.
-    3.  **Start Cast:** Starts the screencast and waits for the session to be ready.
+    3.  **Start Cast:** Starts the screencast, receives a PipeWire stream node, and constructs a GStreamer pipeline to record it.
     4.  It makes heavy use of asynchronous D-Bus calls and signal subscriptions within the `GMainLoop`.
-*   **Options:**
-    *   `--output <FILE>` or `-o <FILE>`: Specifies the output file path for the screen recording. Defaults to `capture.mkv` in the current working directory.
+- **Options:**
+    - `--output <FILE>` or `-o <FILE>`: Specifies the output file path for the screen recording. Defaults to `capture.mkv` in the current working directory.
 
 ## Installation and Building
 
@@ -81,14 +83,14 @@ GIO provides a high-level API for I/O, networking, and IPC, including D-Bus.
 
 You will need a C compiler, Meson, Ninja, and the development files for GLib and GStreamer.
 
-*   **GLib & Build Tools**: `glib2.0`, `meson`, `ninja`
-*   **GStreamer**: `gstreamer-1.0` and the following plugin packages:
-    *   `gstreamer-plugins-base`
-    *   `gstreamer-plugins-good`
-    *   `gstreamer-plugins-bad`
-    *   `gstreamer-plugins-ugly`
-    *   `libgstreamer-plugins-base1.0-dev` (for development headers)
-*   **Portal Implementation**: For the `screencast` tutorial, you also need a Freedesktop portal implementation installed (e.g., `xdg-desktop-portal-gtk`).
+- **GLib & Build Tools**: `glib2.0`, `meson`, `ninja`
+- **GStreamer**: `gstreamer-1.0` and the following plugin packages:
+    - `gstreamer-plugins-base`
+    - `gstreamer-plugins-good`
+    - `gstreamer-plugins-bad`
+    - `gstreamer-plugins-ugly`
+    - `libgstreamer-plugins-base1.0-dev` (for development headers)
+- **Portal Implementation**: For the `screencast` tutorial, you also need a Freedesktop portal implementation installed (e.g., `xdg-desktop-portal-gtk`).
 
 <details>
 <summary><b>Debian / Ubuntu</b></summary>
@@ -154,5 +156,5 @@ To run a specific tutorial, provide its name as an argument. For example:
 
 ## Team
 
-*   [Onurcan](https://github.com/onrcn)
-*   [Ahmet](https://github.com/ahmetyaka)
+- [Onurcan](https://github.com/onrcn)
+- [Ahmet](https://github.com/ahmetyaka)
