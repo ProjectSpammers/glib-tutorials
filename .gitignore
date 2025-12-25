@@ -1,11 +1,12 @@
-.vscode/
-.cache/
-
-build/
-builddir/
-
-captures/
-
-compile_commands.json
-GEMINI.md
-capture.mkv
+# Ignore everything
+*
+# But re-include directories and files that should be tracked
+!/
+!/.clang-format
+!/.gitignore
+!/LICENSE
+!/main.c
+!/meson.build
+!/README.md
+!/tutorials/
+!/tutorials/**
