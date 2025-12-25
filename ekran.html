@@ -57,11 +57,32 @@
                 document.getElementById('answerOutput').value = JSON.stringify(answer);
 
                 if (event.candidate) {
-                    console.log("New candidate found (likely public IP via STUN). Updated JSON.");
+                    // DEBUG: Show candidate type (host/srflx/relay) and IP version
+                    const c = event.candidate.candidate;
+                    const isIPv6 = c.includes(':') && c.split(':').length > 2;
+                    console.log(`ICE Candidate: ${isIPv6 ? 'IPv6' : 'IPv4'} | ${c}`);
                 } else {
-                    console.log("Gathering complete.");
+                    console.log("ICE Gathering complete.");
                 }
             }
+        };
+
+        // DEBUG: Monitor connection state
+        pc.oniceconnectionstatechange = () => {
+            const state = pc.iceConnectionState;
+            console.log("ICE Connection State:", state);
+            document.getElementById('status').innerText = "ICE State: " + state;
+            
+            if (state === 'failed') {
+                document.getElementById('status').style.color = "#f44336";
+                console.error("CONNECTION FAILED! Check firewall or try TURN server.");
+            } else if (state === 'connected' || state === 'completed') {
+                document.getElementById('status').style.color = "#4caf50";
+            }
+        };
+
+        pc.onicegatheringstatechange = () => {
+            console.log("ICE Gathering State:", pc.iceGatheringState);
         };
 
         async function handleOffer() {
