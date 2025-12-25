@@ -166,6 +166,25 @@ static void process_sdp_answer(ScreencastWebRTCState *state,
 static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
   ScreencastWebRTCState *state = (ScreencastWebRTCState *)data;
   switch (GST_MESSAGE_TYPE(msg)) {
+  case GST_MESSAGE_STATE_CHANGED: {
+    if (GST_MESSAGE_SRC(msg) == GST_OBJECT(state->pipeline)) {
+      GstState old_state, new_state, pending_state;
+      gst_message_parse_state_changed(msg, &old_state, &new_state,
+                                      &pending_state);
+
+      // Generate a graph file name based on the state (e.g.,
+      // "0.00.00.123-pipeline_PAUSED_PLAYING")
+      gchar *dump_name = g_strdup_printf("pipeline_%s_%s",
+                                         gst_element_state_get_name(old_state),
+                                         gst_element_state_get_name(new_state));
+
+      gst_debug_bin_to_dot_file_with_ts(GST_BIN(state->pipeline),
+                                        GST_DEBUG_GRAPH_SHOW_ALL, dump_name);
+
+      g_free(dump_name);
+    }
+    break;
+  }
   case GST_MESSAGE_ERROR: {
     gchar *debug;
     GError *error;
