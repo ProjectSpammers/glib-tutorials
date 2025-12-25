@@ -208,37 +208,37 @@ static gchar *get_default_monitor_source() {
 }
 
 static void start_stream(guint32 id, ScreencastWebRTCState *state) {
-  g_print("\n>>> Starting GStreamer WebRTC Pipeline... Node ID: %d\n", id);
+  g_print("\n>>> GStreamer Başlatılıyor (STUN YOK - YEREL MOD)...\n");
 
   gst_init(NULL, NULL);
   gchar *audio_device = get_default_monitor_source();
 
+  // DÜZELTME: "stun-server=..." KISMI SİLİNDİ!
+  // Artık GStreamer dış dünyaya bağlanmaya çalışmayacak.
   char *pipeline_str = g_strdup_printf(
     "webrtcbin name=sendrecv bundle-policy=max-bundle latency=0 "
 
-    // --- VIDEO ---
+// --- VIDEO ---
     "pipewiresrc path=%u do-timestamp=true ! "
-
-    // FIX: Removed glupload/gldownload loop.
-    // Added videoconvert to handle the raw PipeWire format (DMA or SHM)
     "videoconvert ! "
-
-    // Moved queue here to decouple source generation from processing
     "queue max-size-buffers=3 leaky=downstream ! "
-
     "videoscale ! videorate ! "
     "video/x-raw,width=1920,height=1080,framerate=60/1 ! "
-
+    
+    // NVIDIA ENCODER (Senin kartın çalıştığı için bunu tutuyoruz)
     "nvh264enc "
-    "bitrate=10000 "
-    "rc-mode=cbr "
+    "bitrate=12000 "             // 4 Mbps
     "preset=low-latency-hq "
-    "tune=ultra-low-latency "
-    "gop-size=60 "
-    "zerolatency=true ! "
-
+    "zerolatency=true "         // Gecikme olmaması için şart
+    "gop-size=-1 ! "            // Intra-only veya dinamik GOP (tarayıcı sever)
+    
     "h264parse ! "
-    "rtph264pay config-interval=1 ! "
+    
+    // KRİTİK NOKTA: Tarayıcılar SPS/PPS bilgisini her keyframe'de ister.
+    // config-interval=-1 bunu zorlar. Yoksa siyah ekranda kalırsın.
+    "rtph264pay config-interval=-1 pt=96 ! "
+    
+    // Payload Type 96 olarak zorluyoruz ki SDP ile uyuşsun
     "application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
     "queue ! sendrecv. "
 
@@ -247,7 +247,7 @@ static void start_stream(guint32 id, ScreencastWebRTCState *state) {
     "audioconvert ! "
     "audioresample ! "
     "opusenc ! "
-    "rtpopuspay ! "
+    "rtpopuspay pt=97 ! " // Audio Payload Type 97 (Genelde 111'dir ama çakışmasın diye sabitliyoruz)
     "queue ! sendrecv. ",
     id, audio_device);
 
@@ -258,23 +258,20 @@ static void start_stream(guint32 id, ScreencastWebRTCState *state) {
   g_free(pipeline_str);
 
   if (error) {
-    g_printerr("Pipeline Error: %s\n", error->message);
+    g_printerr("Pipeline Hatası: %s\n", error->message);
     g_error_free(error);
     g_main_loop_quit(state->loop);
     return;
   }
 
   state->webrtcbin = gst_bin_get_by_name(GST_BIN(state->pipeline), "sendrecv");
-  if (!state->webrtcbin) {
-    g_printerr("Error: Could not find 'sendrecv' (webrtcbin) in pipeline.\n");
-    g_main_loop_quit(state->loop);
-    return;
-  }
+  
+  // Sinyalleri bağla
+  g_signal_connect(state->webrtcbin, "on-negotiation-needed", G_CALLBACK(on_negotiation_needed), state);
+  g_signal_connect(state->webrtcbin, "on-ice-candidate", G_CALLBACK(on_ice_candidate), state);
 
-  g_signal_connect(state->webrtcbin, "on-negotiation-needed",
-                   G_CALLBACK(on_negotiation_needed), state);
-  g_signal_connect(state->webrtcbin, "on-ice-candidate",
-                   G_CALLBACK(on_ice_candidate), state);
+  // BAĞLANTI DURUMUNU İZLEMEK İÇİN YENİ BİR SİNYAL (DEBUG İÇİN ÇOK ÖNEMLİ)
+  g_signal_connect(state->webrtcbin, "notify::ice-connection-state", G_CALLBACK(NULL), NULL); 
 
   GstBus *bus = gst_element_get_bus(state->pipeline);
   gst_bus_add_watch(bus, bus_call, state);
