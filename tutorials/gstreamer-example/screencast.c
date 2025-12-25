@@ -1,7 +1,7 @@
 #include "screencast.h"
 #include "../common/utils.h"
-#include "gio/gio.h"
-#include "glib.h"
+#include <gio/gio.h>
+#include <glib.h>
 #include <glib/gstdio.h>
 #include <gst/gst.h>
 #include <stdio.h>
@@ -17,20 +17,12 @@ typedef struct {
   GDBusConnection *connection;
   gchar *sanitized_name;
   gchar *session_path;
+  gchar *session_token; // Token'ı saklıyoruz
   gchar *output_path;
 } ScreencastState;
 
-static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
-                              const gchar *object_path,
-                              const gchar *interface_name,
-                              const gchar *signal_name, GVariant *parameters,
-                              gpointer user_data);
+static void select_sources(ScreencastState *state);
 
-static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
-                               const gchar *object_path,
-                               const gchar *interface_name,
-                               const gchar *signal_name, GVariant *parameters,
-                               gpointer user_data);
 
 static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
   GMainLoop *loop = (GMainLoop *)data;
@@ -40,15 +32,13 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
     GError *error;
     gst_message_parse_error(msg, &error, &debug);
     g_printerr("\nERROR: %s\n", error->message);
-    if (debug)
-      g_printerr("Debug Info: %s\n", debug);
+    if (debug) g_printerr("Debug Info: %s\n", debug);
     g_error_free(error);
     g_free(debug);
     g_main_loop_quit(loop);
     break;
   }
-  default:
-    break;
+  default: break;
   }
   return TRUE;
 }
@@ -56,13 +46,8 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
 static gchar *get_default_monitor_source() {
   FILE *fp;
   char path[1024];
-
   fp = popen("pactl get-default-sink", "r");
-  if (fp == NULL) {
-    g_printerr("Failed to get audio device information (pactl error).\n");
-    return NULL;
-  }
-
+  if (fp == NULL) return NULL;
   if (fgets(path, sizeof(path) - 1, fp) != NULL) {
     path[strcspn(path, "\n")] = 0;
     path[strcspn(path, "\r")] = 0;
@@ -74,11 +59,13 @@ static gchar *get_default_monitor_source() {
   return g_strdup_printf("%s.monitor", path);
 }
 
+
 static void start_stream(guint32 id, ScreencastState *state) {
-  g_print("\n>>> Starting GStreamer... Node ID: %d\n", id);
+  g_print("\n>>> Starting Recording Pipeline... Node ID: %d\n", id);
   GstElement *pipeline;
   gst_init(NULL, NULL);
   gchar *audio_device = get_default_monitor_source();
+  
   char *pipeline_str = g_strdup_printf(
       "matroskamux name=mux ! filesink location=%s "
 
@@ -89,25 +76,24 @@ static void start_stream(guint32 id, ScreencastState *state) {
       "videoscale ! videorate ! "
       "video/x-raw,width=1920,height=1080,framerate=60/1 ! "
       "nvh264enc "
-      "bitrate=10000 "          // 4 Mbps (Adjust for quality vs bandwidth)
-      "rc-mode=cbr "            // Constant Bitrate for steady network flow
-      "preset=low-latency-hq "  // NVIDIA-specific low latency
-      "tune=ultra-low-latency " // Minimizes internal buffering
-      "gop-size=60 "            // Keyframe every 60 frames (1 second at 60fps)
-      "zerolatency=true ! "     // Disable B-frames (critical for latency)
+      "bitrate=10000 "          
+      "rc-mode=cbr "            
+      "preset=low-latency-hq "  
+      "tune=ultra-low-latency " 
+      "gop-size=60 "            
+      "zerolatency=true ! "     
       "h264parse ! "
       "queue ! mux.video_0 "
 
       // --- AUDIO ---
-      // buffer-time=200000: 200ms buffer, prevents stuttering
       "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! "
       "audioconvert ! "
-      "audioresample ! " // IMPORTANT: Converts different sample rates
-                         // (44.1/48k)
+      "audioresample ! " 
       "opusenc ! "
       "queue ! mux.audio_0",
-      state->output_path, id, audio_device);
-  g_free(audio_device);
+      state->output_path, id, audio_device ? audio_device : "0");
+      
+  if (audio_device) g_free(audio_device);
 
   GError *error = NULL;
   pipeline = gst_parse_launch(pipeline_str, &error);
@@ -125,262 +111,235 @@ static void start_stream(guint32 id, ScreencastState *state) {
   gst_object_unref(bus);
 
   gst_element_set_state(pipeline, GST_STATE_PLAYING);
+  g_print("Recording started! Check: %s\n", state->output_path);
 }
 
-static void start_screencast(ScreencastState *state) {
-  gchar *token_start = generate_token("tk_start");
-  gchar *start_request_path =
-      g_strdup_printf("%s/request/%s/%s", PORTAL_OBJECT_PATH,
-                      state->sanitized_name, token_start);
 
-  GVariantBuilder start_opts;
-  g_variant_builder_init(&start_opts, G_VARIANT_TYPE("a{sv}"));
-  g_variant_builder_add(&start_opts, "{sv}", "handle_token",
-                        g_variant_new_string(token_start));
-
-  g_dbus_connection_call(
-      state->connection, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH,
-      SCREENCAST_INTERFACE, "Start",
-      g_variant_new("(osa{sv})", state->session_path, "", &start_opts), NULL,
-      G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-
-  g_dbus_connection_signal_subscribe(
-      state->connection, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response",
-      start_request_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_start_response,
-      state, NULL);
-
-  g_free(token_start);
-  g_free(start_request_path);
-}
-
-static void on_start_response(GDBusConnection *conn, const gchar *sender_name,
-                              const gchar *object_path,
-                              const gchar *interface_name,
-                              const gchar *signal_name, GVariant *parameters,
-                              gpointer user_data) {
+static void on_start_response(GDBusConnection *conn, const gchar *sender, const gchar *path, const gchar *iface, const gchar *signal, GVariant *params, gpointer user_data) {
   ScreencastState *state = user_data;
   guint32 response_code;
   GVariant *res;
-  g_variant_get(parameters, "(u@a{sv})", &response_code, &res);
+  
+  g_variant_get(params, "(u@a{sv})", &response_code, &res);
   if (response_code != 0) {
-    g_printerr(
-        "Couldn't get the proper response code for starting screencast.\n");
+    g_printerr("Start request denied/cancelled.\n");
     g_main_loop_quit(state->loop);
     g_variant_unref(res);
-    g_main_loop_quit(state->loop);
+    return;
   }
-  GVariant *streams =
-      g_variant_lookup_value(res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
-  if (streams == NULL) {
-    g_printerr("No streams found in the response.\n");
-    g_variant_unref(res);
-    g_main_loop_quit(state->loop);
+
+  GVariant *streams = g_variant_lookup_value(res, "streams", G_VARIANT_TYPE("a(ua{sv})"));
+  if (streams) {
+    GVariantIter iter;
+    g_variant_iter_init(&iter, streams);
+    guint32 stream_id;
+    if (g_variant_iter_next(&iter, "(u@a{sv})", &stream_id, NULL)) {
+      start_stream(stream_id, state);
+    }
+    g_variant_unref(streams);
   }
-  GVariantIter iter;
-  g_variant_iter_init(&iter, streams);
-  guint32 stream_id;
-  if (g_variant_iter_next(&iter, "(u@a{sv})", &stream_id, NULL)) {
-    start_stream(stream_id, state);
-  } else {
-    g_printerr("No valid stream options found.\n");
-  }
-  g_variant_unref(streams);
+  g_variant_unref(res);
 }
 
-static void on_select_response(GDBusConnection *conn, const gchar *sender_name,
-                               const gchar *object_path,
-                               const gchar *interface_name,
-                               const gchar *signal_name, GVariant *parameters,
-                               gpointer user_data) {
+static void start_screencast(ScreencastState *state) {
+  gchar *token = generate_token("tk_start");
+  GVariantBuilder opts;
+  g_variant_builder_init(&opts, G_VARIANT_TYPE("a{sv}"));
+  g_variant_builder_add(&opts, "{sv}", "handle_token", g_variant_new_string(token));
+
+  g_print("Requesting Start...\n");
+
+  GError *error = NULL;
+  GVariant *ret = g_dbus_connection_call_sync(
+      state->connection, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH, SCREENCAST_INTERFACE, "Start",
+      g_variant_new("(osa{sv})", state->session_path, "", &opts),
+      NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+
+  if (error) {
+    g_printerr("Start Call Failed: %s\n", error->message);
+    g_error_free(error);
+    g_free(token);
+    return;
+  }
+
+  gchar *req_path;
+  g_variant_get(ret, "(o)", &req_path);
+  g_variant_unref(ret);
+
+  g_dbus_connection_signal_subscribe(state->connection, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response",
+                                     req_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_start_response, state, NULL);
+  g_free(req_path);
+  g_free(token);
+}
+
+static void on_select_response(GDBusConnection *conn, const gchar *sender, const gchar *path, const gchar *iface, const gchar *signal, GVariant *params, gpointer user_data) {
   ScreencastState *state = user_data;
   guint32 response_code;
-  g_variant_get(parameters, "(u@a{sv})", &response_code, NULL);
+  g_variant_get(params, "(u@a{sv})", &response_code, NULL);
 
   if (response_code != 0) {
-    g_printerr("Couldn't get the proper response code for screen selection.\n");
+    g_printerr("Source selection failed.\n");
     g_main_loop_quit(state->loop);
     return;
   }
+  
+  g_print("Sources selected. Starting screencast...\n");
   start_screencast(state);
 }
 
-static void select_sources(ScreencastState *state, const gchar *token_session) {
-  gchar *token_select = generate_token("tk_slct");
+static void select_sources(ScreencastState *state) {
+  gchar *token = generate_token("tk_slct");
+  GVariantBuilder opts;
+  g_variant_builder_init(&opts, G_VARIANT_TYPE("a{sv}"));
+  g_variant_builder_add(&opts, "{sv}", "handle_token", g_variant_new_string(token));
+  g_variant_builder_add(&opts, "{sv}", "types", g_variant_new_uint32(1 | 2)); // Monitor | Window
+  g_variant_builder_add(&opts, "{sv}", "cursor_mode", g_variant_new_uint32(2)); // Embedded
 
-  const gchar *unique_name =
-      g_dbus_connection_get_unique_name(state->connection);
-  state->sanitized_name = sanitize_sender_name(unique_name);
-  state->session_path = g_strdup_printf("%s/session/%s/%s", PORTAL_OBJECT_PATH,
-                                        state->sanitized_name, token_session);
-  GVariantBuilder select_sources_opts;
-  g_variant_builder_init(&select_sources_opts, G_VARIANT_TYPE("a{sv}"));
-  g_variant_builder_add(&select_sources_opts, "{sv}", "handle_token",
-                        g_variant_new_string(token_select));
+  g_print("Requesting Source Selection...\n");
 
-  g_dbus_connection_call(
-      state->connection, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH,
-      SCREENCAST_INTERFACE, "SelectSources",
-      g_variant_new("(oa{sv})", state->session_path, &select_sources_opts),
-      NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-
-  g_print("Waiting for screen selection\n");
-
-  gchar *request_path = g_strdup_printf("%s/request/%s/%s", PORTAL_OBJECT_PATH,
-                                        state->sanitized_name, token_select);
-  g_dbus_connection_signal_subscribe(
-      state->connection, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response",
-      request_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_select_response, state,
-      NULL);
-
-  g_free(token_select);
-  g_free(request_path);
-}
-
-static gchar *create_session(ScreencastState *state) {
   GError *error = NULL;
-  gchar *token_create = generate_token("tk_create");
-  gchar *token_session = generate_token("tk_sess");
-
-  GVariantBuilder create_session_opts;
-  g_variant_builder_init(&create_session_opts, G_VARIANT_TYPE("a{sv}"));
-  g_variant_builder_add(&create_session_opts, "{sv}", "handle_token",
-                        g_variant_new_string(token_create));
-  g_variant_builder_add(&create_session_opts, "{sv}", "session_handle_token",
-                        g_variant_new_string(token_session));
-
-  GVariant *res = g_dbus_connection_call_sync(
-      state->connection, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH,
-      SCREENCAST_INTERFACE, "CreateSession",
-      g_variant_new("(a{sv})", &create_session_opts), NULL,
-      G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
-
-  g_free(token_create);
+  GVariant *ret = g_dbus_connection_call_sync(
+      state->connection, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH, SCREENCAST_INTERFACE, "SelectSources",
+      g_variant_new("(oa{sv})", state->session_path, &opts),
+      NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
 
   if (error) {
-    g_printerr("CreateSession error: %s\n", error->message);
+    g_printerr("SelectSources Call Failed: %s\n", error->message);
     g_error_free(error);
-    g_variant_unref(res);
-    g_free(token_session);
-    return NULL;
-  }
-
-  g_variant_unref(res);
-  return token_session;
-}
-
-static gboolean on_stdin_input(GIOChannel *channel, GIOCondition condition,
-                               gpointer user_data) {
-  ScreencastState *state = user_data;
-  gchar *input = NULL;
-  GIOStatus status;
-
-  /* We are watching for G_IO_IN, but G_IO_HUP and G_IO_ERR can also be
-     reported. */
-  if (condition & (G_IO_HUP | G_IO_ERR)) {
-    g_main_loop_quit(state->loop);
-    return FALSE;
-  }
-
-  status = g_io_channel_read_line(channel, &input, NULL, NULL, NULL);
-
-  if (status == G_IO_STATUS_NORMAL) {
-    if (strcmp(g_strchomp(input), "exit") == 0) {
-      g_print("\nExit command received. Stopping screencast.\n");
-      g_main_loop_quit(state->loop);
-      g_free(input);
-      return FALSE; // Stop watching
-    }
-  } else {
-    // This could be EOF or an error. In either case, we stop.
-    g_main_loop_quit(state->loop);
-    g_free(input);
-    return FALSE; // Stop watching
-  }
-
-  g_free(input);
-  return TRUE; // Continue watching
-}
-
-static void screencast_state_free(ScreencastState *state) {
-  if (state == NULL) {
+    g_free(token);
     return;
   }
-  g_dbus_connection_call(state->connection, PORTAL_BUS_NAME,
-                         state->session_path, // The path to the session object
-                         "org.freedesktop.portal.Session", "Close", NULL, NULL,
-                         G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+
+  gchar *req_path;
+  g_variant_get(ret, "(o)", &req_path);
+  g_variant_unref(ret);
+
+  g_print("Portal assigned Select path: %s\n", req_path);
+
+  g_dbus_connection_signal_subscribe(state->connection, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response",
+                                     req_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_select_response, state, NULL);
+  g_free(req_path);
+  g_free(token);
+}
+
+static void on_create_session_response(GDBusConnection *conn, const gchar *sender, const gchar *path, const gchar *iface, const gchar *signal, GVariant *params, gpointer user_data) {
+  ScreencastState *state = user_data;
+  guint32 response_code;
+  GVariant *results;
+  g_variant_get(params, "(u@a{sv})", &response_code, &results);
+
+  if (response_code != 0) {
+    g_printerr("CreateSession Failed.\n");
+    g_main_loop_quit(state->loop);
+    return;
+  }
+
+  gchar *remote_handle = NULL;
+  if (g_variant_lookup(results, "session_handle", "s", &remote_handle)) {
+      g_free(state->session_path);
+      state->session_path = g_strdup(remote_handle);
+      g_free(remote_handle);
+  }
+  g_variant_unref(results);
+
+  g_print("Session created: %s. Now selecting sources...\n", state->session_path);
+  select_sources(state); // ZİNCİRLEME GEÇİŞ
+}
+
+static void create_session(ScreencastState *state) {
+  state->session_token = generate_token("tk_sess");
+  const gchar *unique = g_dbus_connection_get_unique_name(state->connection);
+  state->sanitized_name = sanitize_sender_name(unique);
+  state->session_path = g_strdup_printf("%s/session/%s/%s", PORTAL_OBJECT_PATH, state->sanitized_name, state->session_token);
+
+  gchar *token = generate_token("tk_crt");
+  GVariantBuilder opts;
+  g_variant_builder_init(&opts, G_VARIANT_TYPE("a{sv}"));
+  g_variant_builder_add(&opts, "{sv}", "handle_token", g_variant_new_string(token));
+  g_variant_builder_add(&opts, "{sv}", "session_handle_token", g_variant_new_string(state->session_token));
+
+  g_print("Creating Session...\n");
+
+  GError *error = NULL;
+  GVariant *ret = g_dbus_connection_call_sync(
+      state->connection, PORTAL_BUS_NAME, PORTAL_OBJECT_PATH, SCREENCAST_INTERFACE, "CreateSession",
+      g_variant_new("(a{sv})", &opts),
+      NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+
+  if (error) {
+    g_printerr("CreateSession Call Failed: %s\n", error->message);
+    g_error_free(error);
+    g_free(token);
+    return;
+  }
+
+  gchar *req_path;
+  g_variant_get(ret, "(o)", &req_path);
+  g_variant_unref(ret);
+
+  g_dbus_connection_signal_subscribe(state->connection, PORTAL_BUS_NAME, REQUEST_INTERFACE, "Response",
+                                     req_path, NULL, G_DBUS_SIGNAL_FLAGS_NONE, on_create_session_response, state, NULL);
+  g_free(req_path);
+  g_free(token);
+}
+
+// --- Main ---
+
+static gboolean on_stdin_input(GIOChannel *channel, GIOCondition condition, gpointer user_data) {
+  ScreencastState *state = user_data;
+  gchar *input = NULL;
+  if (g_io_channel_read_line(channel, &input, NULL, NULL, NULL) == G_IO_STATUS_NORMAL) {
+    if (g_strcmp0(g_strchomp(input), "exit") == 0) {
+      g_main_loop_quit(state->loop);
+    }
+    g_free(input);
+  }
+  return TRUE;
+}
+
+static gchar *output_file = NULL;
+static GOptionEntry entries[] = {
+    {"output", 'o', 0, G_OPTION_ARG_STRING, &output_file, "Output file path", "FILE"},
+    {NULL}};
+
+void screencast_tutorial(int argc, char *argv[]) {
+  ScreencastState *state = g_new0(ScreencastState, 1);
+  GError *error = NULL;
+
+  GOptionContext *context = g_option_context_new("- screencast utility");
+  g_option_context_add_main_entries(context, entries, NULL);
+  g_option_context_parse(context, &argc, &argv, NULL);
+  g_option_context_free(context);
+
+  state->output_path = output_file ? g_strdup(output_file) : g_build_filename(g_get_current_dir(), "capture.mkv", NULL);
+  if (output_file) g_free(output_file);
+
+  state->connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
+  if (error) { g_printerr("DBus Error: %s\n", error->message); return; }
+
+  state->loop = g_main_loop_new(NULL, FALSE);
+
+  // Input İzleyici
+  GIOChannel *stdin_ch = g_io_channel_unix_new(0);
+  g_io_add_watch(stdin_ch, G_IO_IN, on_stdin_input, state);
+  g_io_channel_unref(stdin_ch);
+
+  // BAŞLAT
+  create_session(state);
+
+  g_print("Running... Type 'exit' to stop.\n");
+  g_main_loop_run(state->loop);
+
+  // Temizlik
+  if (state->session_path) {
+      g_dbus_connection_call(state->connection, PORTAL_BUS_NAME, state->session_path,
+                             "org.freedesktop.portal.Session", "Close", NULL, NULL,
+                             G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
+  }
   g_object_unref(state->connection);
   g_main_loop_unref(state->loop);
   g_free(state->sanitized_name);
   g_free(state->session_path);
   g_free(state->output_path);
   g_free(state);
-}
-
-static gchar *output_file = NULL;
-
-static GOptionEntry entries[] = {
-    {"output", 'o', 0, G_OPTION_ARG_STRING, &output_file,
-     "Output file path (default: $PWD/capture.mkv)", "FILE"},
-    {NULL}};
-
-void screencast_tutorial(int argc, char *argv[]) {
-  ScreencastState *state = g_new0(ScreencastState, 1);
-  GOptionContext *context;
-  GError *error = NULL;
-
-  context = g_option_context_new("- screencast utility");
-  g_option_context_add_main_entries(context, entries, NULL);
-
-  if (!g_option_context_parse(context, &argc, &argv, &error)) {
-    g_print("option parsing failed: %s\n", error->message);
-    g_option_context_free(context);
-    g_free(state);
-    return;
-  }
-  g_option_context_free(context);
-
-  if (output_file == NULL) {
-    gchar *current_dir = g_get_current_dir();
-    state->output_path = g_build_filename(current_dir, "capture.mkv", NULL);
-    g_free(current_dir);
-  } else {
-    state->output_path = g_strdup(output_file);
-    g_free(output_file);
-  }
-
-  g_print("Starting screencast tutorial. Outputting to: %s\n",
-          state->output_path);
-
-  state->connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
-
-  if (error) {
-    g_printerr("Connection error: %s\n", error->message);
-    g_error_free(error);
-
-    screencast_state_free(state);
-    return;
-  }
-
-  state->loop = g_main_loop_new(NULL, FALSE);
-
-  GIOChannel *stdin_channel = g_io_channel_unix_new(fileno(stdin));
-  g_io_add_watch(stdin_channel, G_IO_IN | G_IO_HUP | G_IO_ERR, on_stdin_input,
-                 state);
-  g_io_channel_unref(stdin_channel);
-
-  gchar *token_session = create_session(state);
-  if (token_session == NULL) {
-    screencast_state_free(state);
-    return;
-  }
-
-  select_sources(state, token_session);
-
-  g_free(token_session);
-
-  g_print("\nType 'exit' and press Enter to stop the recording at any time.\n");
-  g_main_loop_run(state->loop);
-
-  screencast_state_free(state);
 }
