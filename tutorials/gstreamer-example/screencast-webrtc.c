@@ -170,9 +170,8 @@ static gboolean bus_call(GstBus *bus, GstMessage *msg, gpointer data) {
     gchar *debug;
     GError *error;
     gst_message_parse_error(msg, &error, &debug);
-    gst_debug_bin_to_dot_file_with_ts(GST_BIN(state->pipeline),
-                                      GST_DEBUG_GRAPH_SHOW_ALL,
-                                      "pipeline_error");
+    gst_debug_bin_to_dot_file_with_ts(
+        GST_BIN(state->pipeline), GST_DEBUG_GRAPH_SHOW_ALL, "pipeline_error");
 
     g_printerr("\nERROR: %s\n", error->message);
     if (debug)
@@ -208,48 +207,48 @@ static gchar *get_default_monitor_source() {
 }
 
 static void start_stream(guint32 id, ScreencastWebRTCState *state) {
-  g_print("\n>>> GStreamer Başlatılıyor (STUN YOK - YEREL MOD)...\n");
+  g_print("\n>>> Starting GStreamer...\n");
 
   gst_init(NULL, NULL);
   gchar *audio_device = get_default_monitor_source();
 
-  // DÜZELTME: "stun-server=..." KISMI SİLİNDİ!
-  // Artık GStreamer dış dünyaya bağlanmaya çalışmayacak.
   char *pipeline_str = g_strdup_printf(
-    "webrtcbin name=sendrecv bundle-policy=max-bundle latency=0 "
+      "webrtcbin name=sendrecv "
+      "stun-server=stun://stun.l.google.com:19302 "
+      "bundle-policy=max-bundle latency=0 "
 
-// --- VIDEO ---
-    "pipewiresrc path=%u do-timestamp=true ! "
-    "videoconvert ! "
-    "queue max-size-buffers=3 leaky=downstream ! "
-    "videoscale ! videorate ! "
-    "video/x-raw,width=1920,height=1080,framerate=60/1 ! "
-    
-    // NVIDIA ENCODER (Senin kartın çalıştığı için bunu tutuyoruz)
-    "nvh264enc "
-    "bitrate=12000 "             // 4 Mbps
-    "preset=low-latency-hq "
-    "zerolatency=true "         // Gecikme olmaması için şart
-    "gop-size=-1 ! "            // Intra-only veya dinamik GOP (tarayıcı sever)
-    
-    "h264parse ! "
-    
-    // KRİTİK NOKTA: Tarayıcılar SPS/PPS bilgisini her keyframe'de ister.
-    // config-interval=-1 bunu zorlar. Yoksa siyah ekranda kalırsın.
-    "rtph264pay config-interval=-1 pt=96 ! "
-    
-    // Payload Type 96 olarak zorluyoruz ki SDP ile uyuşsun
-    "application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
-    "queue ! sendrecv. "
+      // --- VIDEO ---
+      "pipewiresrc path=%u do-timestamp=true ! "
+      "videoconvert ! "
+      "queue max-size-buffers=3 leaky=downstream ! "
+      "videoscale ! videorate ! "
+      "video/x-raw,width=1920,height=1080,framerate=60/1 ! "
 
-    // --- AUDIO ---
-    "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! "
-    "audioconvert ! "
-    "audioresample ! "
-    "opusenc ! "
-    "rtpopuspay pt=97 ! " // Audio Payload Type 97 (Genelde 111'dir ama çakışmasın diye sabitliyoruz)
-    "queue ! sendrecv. ",
-    id, audio_device);
+      // NVIDIA ENCODER (Senin kartın çalıştığı için bunu tutuyoruz)
+      "nvh264enc "
+      "bitrate=12000 " // 4 Mbps
+      "preset=low-latency-hq "
+      "zerolatency=true " // Gecikme olmaması için şart
+      "gop-size=-1 ! "    // Intra-only veya dinamik GOP (tarayıcı sever)
+
+      "h264parse ! "
+
+      // KRİTİK NOKTA: Tarayıcılar SPS/PPS bilgisini her keyframe'de ister.
+      // config-interval=-1 bunu zorlar. Yoksa siyah ekranda kalırsın.
+      "rtph264pay config-interval=-1 pt=96 ! "
+
+      // Payload Type 96 olarak zorluyoruz ki SDP ile uyuşsun
+      "application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
+      "queue ! sendrecv. "
+
+      // --- AUDIO ---
+      "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! "
+      "audioconvert ! "
+      "audioresample ! "
+      "opusenc ! "
+      "rtpopuspay pt=97 ! "
+      "queue ! sendrecv. ",
+      id, audio_device);
 
   g_free(audio_device);
 
@@ -265,13 +264,15 @@ static void start_stream(guint32 id, ScreencastWebRTCState *state) {
   }
 
   state->webrtcbin = gst_bin_get_by_name(GST_BIN(state->pipeline), "sendrecv");
-  
-  // Sinyalleri bağla
-  g_signal_connect(state->webrtcbin, "on-negotiation-needed", G_CALLBACK(on_negotiation_needed), state);
-  g_signal_connect(state->webrtcbin, "on-ice-candidate", G_CALLBACK(on_ice_candidate), state);
+
+  g_signal_connect(state->webrtcbin, "on-negotiation-needed",
+                   G_CALLBACK(on_negotiation_needed), state);
+  g_signal_connect(state->webrtcbin, "on-ice-candidate",
+                   G_CALLBACK(on_ice_candidate), state);
 
   // BAĞLANTI DURUMUNU İZLEMEK İÇİN YENİ BİR SİNYAL (DEBUG İÇİN ÇOK ÖNEMLİ)
-  g_signal_connect(state->webrtcbin, "notify::ice-connection-state", G_CALLBACK(NULL), NULL); 
+  g_signal_connect(state->webrtcbin, "notify::ice-connection-state",
+                   G_CALLBACK(NULL), NULL);
 
   GstBus *bus = gst_element_get_bus(state->pipeline);
   gst_bus_add_watch(bus, bus_call, state);

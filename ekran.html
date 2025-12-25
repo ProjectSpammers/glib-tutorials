@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>GStreamer Receiver (Local Mode)</title>
+    <title>GStreamer Receiver (STUN Enabled)</title>
     <style>
         body { background: #121212; color: #eee; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
         video { width: 80%; background: #000; border: 1px solid #444; }
@@ -27,13 +27,14 @@
     <button onclick="navigator.clipboard.writeText(document.getElementById('answerOutput').value)">Copy to Clipboard</button>
 
     <script>
-        // DÜZELTME 1: iceServers BOŞ BIRAKILDI. 
-        // Böylece Google'a bağlanmaya çalışıp vakit kaybetmeyecek. Sadece yerel ağ.
+        // CHANGE: Added Google's free STUN server here
         const pc = new RTCPeerConnection({
-            iceServers: [] 
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
         });
 
-        // Videoyu almaya hazırla
+        // Prepare to receive video
         pc.addTransceiver('video', { direction: 'recvonly' });
         pc.addTransceiver('audio', { direction: 'recvonly' });
 
@@ -44,20 +45,19 @@
             document.getElementById('remoteVideo').srcObject = event.streams[0];
         };
 
-        // DÜZELTME 2: Aday toplamanın bitmesini BEKLEMİYORUZ.
-        // İlk yerel aday (Localhost IP) bulunduğu an kutuyu dolduruyoruz.
+        // Send candidates as they are gathered (Trickle ICE logic preserved in the JSON blob)
         pc.onicecandidate = event => {
             if (pc.localDescription) {
                 const answer = {
                     type: pc.localDescription.type,
                     sdp: pc.localDescription.sdp
                 };
-                // JSON'ı kutuya bas
+
+                // Update the JSON in the text area continuously as new candidates (like STUN) are found
                 document.getElementById('answerOutput').value = JSON.stringify(answer);
-                
-                // Kullanıcıya bilgi ver
+
                 if (event.candidate) {
-                    console.log("New candidate found, updated JSON.");
+                    console.log("New candidate found (likely public IP via STUN). Updated JSON.");
                 } else {
                     console.log("Gathering complete.");
                 }
@@ -67,15 +67,15 @@
         async function handleOffer() {
             try {
                 const offerText = document.getElementById('offerInput').value;
-                if (!offerText) return alert("Offer yapıştırın!");
-                
+                if (!offerText) return alert("Please paste the offer first!");
+
                 document.getElementById('status').innerText = "Processing Offer...";
                 const offer = JSON.parse(offerText);
 
                 await pc.setRemoteDescription(offer);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                
+
                 document.getElementById('status').innerText = "Answer Created! Copy below.";
 
             } catch (e) {
