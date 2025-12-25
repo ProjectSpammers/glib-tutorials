@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>GStreamer Receiver (STUN Enabled)</title>
+    <title>GStreamer Receiver (TURN Enabled)</title>
     <style>
         body { background: #121212; color: #eee; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
         video { width: 80%; background: #000; border: 1px solid #444; }
@@ -27,11 +27,33 @@
     <button onclick="navigator.clipboard.writeText(document.getElementById('answerOutput').value)">Copy to Clipboard</button>
 
     <script>
-        // CHANGE: Added Google's free STUN server here
+        // GÜNCELLEME: Metered.ca TURN sunucuları eklendi
         const pc = new RTCPeerConnection({
             iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
+                {
+                    urls: "stun:stun.relay.metered.ca:80",
+                },
+                {
+                    urls: "turn:standard.relay.metered.ca:80",
+                    username: "fb812708d8d9aeac6f784ba6",
+                    credential: "4ulqVF46r6A0jrYl",
+                },
+                {
+                    urls: "turn:standard.relay.metered.ca:80?transport=tcp",
+                    username: "fb812708d8d9aeac6f784ba6",
+                    credential: "4ulqVF46r6A0jrYl",
+                },
+                {
+                    urls: "turn:standard.relay.metered.ca:443",
+                    username: "fb812708d8d9aeac6f784ba6",
+                    credential: "4ulqVF46r6A0jrYl",
+                },
+                {
+                    urls: "turns:standard.relay.metered.ca:443?transport=tcp",
+                    username: "fb812708d8d9aeac6f784ba6",
+                    credential: "4ulqVF46r6A0jrYl",
+                },
+            ],
         });
 
         // Prepare to receive video
@@ -42,7 +64,15 @@
             console.log("Track received!", event.streams[0]);
             document.getElementById('status').innerText = "Streaming via: " + pc.iceConnectionState;
             document.getElementById('status').style.color = "#0f0";
-            document.getElementById('remoteVideo').srcObject = event.streams[0];
+
+            const videoEl = document.getElementById('remoteVideo');
+            videoEl.srcObject = event.streams[0];
+
+            // Tarayıcıyı zorla oynatmaya başlat
+            videoEl.play().catch(e => {
+                console.error("Autoplay hatası (Tarayıcı engelledi):", e);
+                // Eğer burada hata verirse, videoya 'muted' özelliği ekli olduğundan emin ol.
+            });
         };
 
         // Send candidates as they are gathered (Trickle ICE logic preserved in the JSON blob)
@@ -53,36 +83,20 @@
                     sdp: pc.localDescription.sdp
                 };
 
-                // Update the JSON in the text area continuously as new candidates (like STUN) are found
+                // Update the JSON in the text area continuously as new candidates (like TURN relays) are found
                 document.getElementById('answerOutput').value = JSON.stringify(answer);
 
                 if (event.candidate) {
-                    // DEBUG: Show candidate type (host/srflx/relay) and IP version
-                    const c = event.candidate.candidate;
-                    const isIPv6 = c.includes(':') && c.split(':').length > 2;
-                    console.log(`ICE Candidate: ${isIPv6 ? 'IPv6' : 'IPv4'} | ${c}`);
+                    // Check if it's a relay candidate (TURN)
+                    if (event.candidate.type === 'relay') {
+                        console.log("TURN (Relay) candidate found! Connection likely to succeed.");
+                    } else {
+                        console.log("New candidate found: " + event.candidate.type);
+                    }
                 } else {
-                    console.log("ICE Gathering complete.");
+                    console.log("Gathering complete.");
                 }
             }
-        };
-
-        // DEBUG: Monitor connection state
-        pc.oniceconnectionstatechange = () => {
-            const state = pc.iceConnectionState;
-            console.log("ICE Connection State:", state);
-            document.getElementById('status').innerText = "ICE State: " + state;
-            
-            if (state === 'failed') {
-                document.getElementById('status').style.color = "#f44336";
-                console.error("CONNECTION FAILED! Check firewall or try TURN server.");
-            } else if (state === 'connected' || state === 'completed') {
-                document.getElementById('status').style.color = "#4caf50";
-            }
-        };
-
-        pc.onicegatheringstatechange = () => {
-            console.log("ICE Gathering State:", pc.iceGatheringState);
         };
 
         async function handleOffer() {
