@@ -1,5 +1,6 @@
 #include "tutorials/gio-example/notification-sender.h"
 #include "tutorials/gobject-example/example-person.h"
+#include "tutorials/gstreamer-example/screencast-webrtc.h"
 #include "tutorials/gstreamer-example/screencast.h"
 #include "tutorials/timeout-example/timeout.h"
 #include <gio/gio.h>
@@ -19,6 +20,7 @@ Tutorial tutorials[] = {
     {"gobject-get-set", gobject_tutorial_get_set},
     {"dbus-notification", send_notification},
     {"screencast", screencast_tutorial},
+    {"screencast-webrtc", screencast_webrtc_tutorial},
 
     /* { "example", example_tutorial_function }, */ // Future tutorials go here
 

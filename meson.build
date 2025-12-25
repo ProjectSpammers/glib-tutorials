@@ -11,16 +11,18 @@ gio_dep = dependency('gio-2.0')
 gst_dep = dependency('gstreamer-1.0')
 gst_video_dep = dependency('gstreamer-video-1.0')
 gst_webrtc_dep = dependency('gstreamer-webrtc-1.0')
+json_glib_dep = dependency('json-glib-1.0')
 
 gio_unix_dep = dependency('gio-unix-2.0', required: false)
 
 src_files = [
   'main.c',
+  'tutorials/common/utils.c',
   'tutorials/timeout-example/timeout.c',
   'tutorials/gobject-example/example-person.c',
   'tutorials/gio-example/notification-sender.c',
   'tutorials/gstreamer-example/screencast.c',
-  'tutorials/common/utils.c',
+  'tutorials/gstreamer-example/screencast-webrtc.c',
 ]
 
 executable(
@@ -34,6 +36,7 @@ executable(
     gst_dep,
     gst_video_dep,
     gst_webrtc_dep,
+    json_glib_dep,
   ],
   install: true,
 )
