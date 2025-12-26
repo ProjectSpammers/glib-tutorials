@@ -29,9 +29,11 @@
     <script>
         // CHANGE: Added Google's free STUN server here
         const pc = new RTCPeerConnection({
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' }
-            ]
+iceServers: [
+      {
+        urls: "stun",
+      },
+  ]
         });
 
         // Prepare to receive video
@@ -85,24 +87,41 @@
             console.log("ICE Gathering State:", pc.iceGatheringState);
         };
 
-        async function handleOffer() {
-            try {
-                const offerText = document.getElementById('offerInput').value;
-                if (!offerText) return alert("Please paste the offer first!");
+async function handleOffer() {
+    try {
+        const offerText = document.getElementById('offerInput').value;
+        if (!offerText) return alert("Please paste the offer first!");
 
-                document.getElementById('status').innerText = "Processing Offer...";
-                const offer = JSON.parse(offerText);
+        document.getElementById('status').innerText = "Processing Offer & Gathering ICE Candidates...";
+        const offer = JSON.parse(offerText);
 
-                await pc.setRemoteDescription(offer);
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
+        await pc.setRemoteDescription(offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
 
-                document.getElementById('status').innerText = "Answer Created! Copy below.";
-
-            } catch (e) {
-                alert("Error: " + e);
-            }
+        // --- KRİTİK DEĞİŞİKLİK: ICE Gathering tamamlanana kadar bekle ---
+        if (pc.iceGatheringState !== 'complete') {
+            const checkState = () => {
+                if (pc.iceGatheringState === 'complete') {
+                    pc.removeEventListener('icegatheringstatechange', checkState);
+                    const finalAnswer = {
+                        type: pc.localDescription.type,
+                        sdp: pc.localDescription.sdp
+                    };
+                    document.getElementById('answerOutput').value = JSON.stringify(finalAnswer);
+                    document.getElementById('status').innerText = "DONE! Answer is complete with TURN candidates.";
+                    document.getElementById('status').style.color = "#4caf50";
+                }
+            };
+            pc.addEventListener('icegatheringstatechange', checkState);
+        } else {
+            document.getElementById('answerOutput').value = JSON.stringify(pc.localDescription);
         }
+
+    } catch (e) {
+        alert("Error: " + e);
+    }
+}
     </script>
 </body>
 </html>
