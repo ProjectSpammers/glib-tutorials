@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>GStreamer Receiver (STUN Enabled)</title>
+    <style>
+        body { background: #121212; color: #eee; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; }
+        video { width: 80%; background: #000; border: 1px solid #444; }
+        textarea { width: 80%; height: 80px; background: #222; color: #0f0; border: 1px solid #555; font-family: monospace; }
+        button { padding: 15px 30px; font-size: 16px; margin: 10px; cursor: pointer; background: #2196f3; color: white; border: none; font-weight: bold;}
+        .status { color: #ff9800; font-weight: bold; margin: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>1. Video Stream</h2>
+    <video id="remoteVideo" autoplay playsinline controls muted></video>
+    <div id="status" class="status">Waiting for Offer...</div>
+
+    <h3>2. Paste Offer Here</h3>
+    <textarea id="offerInput" placeholder='Paste {"type":"offer"...} here'></textarea>
+
+    <button onclick="handleOffer()">ACCEPT & GENERATE ANSWER</button>
+
+    <h3>3. Copy this Answer (It will appear INSTANTLY)</h3>
+    <textarea id="answerOutput" readonly placeholder="Answer will appear here immediately..."></textarea>
+    <button onclick="navigator.clipboard.writeText(document.getElementById('answerOutput').value)">Copy to Clipboard</button>
+
+    <script>
+        // CHANGE: Added Google's free STUN server here
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' }
+            ]
+        });
+
+        // Prepare to receive video
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+
+        pc.ontrack = event => {
+            console.log("Track received!", event.streams[0]);
+            document.getElementById('status').innerText = "Streaming via: " + pc.iceConnectionState;
+            document.getElementById('status').style.color = "#0f0";
+            document.getElementById('remoteVideo').srcObject = event.streams[0];
+        };
+
+        // Send candidates as they are gathered (Trickle ICE logic preserved in the JSON blob)
+        pc.onicecandidate = event => {
+            if (pc.localDescription) {
+                const answer = {
+                    type: pc.localDescription.type,
+                    sdp: pc.localDescription.sdp
+                };
+
+                // Update the JSON in the text area continuously as new candidates (like STUN) are found
+                document.getElementById('answerOutput').value = JSON.stringify(answer);
+
+                if (event.candidate) {
+                    // DEBUG: Show candidate type (host/srflx/relay) and IP version
+                    const c = event.candidate.candidate;
+                    const isIPv6 = c.includes(':') && c.split(':').length > 2;
+                    console.log(`ICE Candidate: ${isIPv6 ? 'IPv6' : 'IPv4'} | ${c}`);
+                } else {
+                    console.log("ICE Gathering complete.");
+                }
+            }
+        };
+
+        // DEBUG: Monitor connection state
+        pc.oniceconnectionstatechange = () => {
+            const state = pc.iceConnectionState;
+            console.log("ICE Connection State:", state);
+            document.getElementById('status').innerText = "ICE State: " + state;
+            
+            if (state === 'failed') {
+                document.getElementById('status').style.color = "#f44336";
+                console.error("CONNECTION FAILED! Check firewall or try TURN server.");
+            } else if (state === 'connected' || state === 'completed') {
+                document.getElementById('status').style.color = "#4caf50";
+            }
+        };
+
+        pc.onicegatheringstatechange = () => {
+            console.log("ICE Gathering State:", pc.iceGatheringState);
+        };
+
+        async function handleOffer() {
+            try {
+                const offerText = document.getElementById('offerInput').value;
+                if (!offerText) return alert("Please paste the offer first!");
+
+                document.getElementById('status').innerText = "Processing Offer...";
+                const offer = JSON.parse(offerText);
+
+                await pc.setRemoteDescription(offer);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                document.getElementById('status').innerText = "Answer Created! Copy below.";
+
+            } catch (e) {
+                alert("Error: " + e);
+            }
+        }
+    </script>
+</body>
+</html>

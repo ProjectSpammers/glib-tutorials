@@ -29,6 +29,17 @@ static void select_sources(ScreencastWebRTCState *state);
 
 // --- WebRTC Helper Functions ---
 
+<<<<<<< HEAD
+=======
+static void send_sdp_to_peer(const gchar *type, const gchar *sdp_string) {
+  gchar *escaped_sdp = g_strescape(sdp_string, NULL);
+  g_print("\n\n=== SDP %s START ===\n", type);
+  g_print("{\"type\": \"%s\", \"sdp\": \"%s\"}", type, escaped_sdp);
+  g_print("\n=== SDP %s END ===\n\n", type);
+  g_free(escaped_sdp);
+}
+
+>>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
 static void on_offer_created(GstPromise *promise, gpointer user_data) {
   ScreencastWebRTCState *state = (ScreencastWebRTCState *)user_data;
   GstStructure *reply;
@@ -42,6 +53,11 @@ static void on_offer_created(GstPromise *promise, gpointer user_data) {
 
   if (offer) {
     g_signal_emit_by_name(state->webrtcbin, "set-local-description", offer, NULL);
+<<<<<<< HEAD
+=======
+    sdp_string = gst_sdp_message_as_text(offer->sdp);
+    send_sdp_to_peer("offer", sdp_string);
+>>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
     gst_webrtc_session_description_free(offer);
   }
 }
@@ -52,6 +68,7 @@ static void on_negotiation_needed(GstElement *element, gpointer user_data) {
   g_signal_emit_by_name(state->webrtcbin, "create-offer", NULL, promise);
 }
 
+<<<<<<< HEAD
 
 static void notify_ice_gathering_state(GstElement *webrtc, guint mlineindex, gchar *candidate, gpointer user_data) {
 GstWebRTCICEGatheringState ice_state;
@@ -74,6 +91,10 @@ GstWebRTCICEGatheringState ice_state;
                 gst_webrtc_session_description_free(local_desc);
             }
         }
+=======
+static void on_ice_candidate(GstElement *webrtc, guint mlineindex, gchar *candidate, gpointer user_data) {
+  g_print("\n{\"candidate\": \"%s\", \"sdpMLineIndex\": %u}\n", candidate, mlineindex);
+>>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
 }
 
 // --- Pipeline ---
@@ -168,6 +189,7 @@ static void start_stream(guint32 id, ScreencastWebRTCState *state) {
   }
 
   state->webrtcbin = gst_bin_get_by_name(GST_BIN(state->pipeline), "sendrecv");
+<<<<<<< HEAD
 
   g_object_set(state->webrtcbin, "stun-server", "stun:credentials", NULL);
 
@@ -184,6 +206,10 @@ static void start_stream(guint32 id, ScreencastWebRTCState *state) {
       "turns://credentials", NULL);
   g_signal_connect(state->webrtcbin, "on-negotiation-needed", G_CALLBACK(on_negotiation_needed), state);
   g_signal_connect(state->webrtcbin, "notify::ice-gathering-state", G_CALLBACK(notify_ice_gathering_state), state);
+=======
+  g_signal_connect(state->webrtcbin, "on-negotiation-needed", G_CALLBACK(on_negotiation_needed), state);
+  g_signal_connect(state->webrtcbin, "on-ice-candidate", G_CALLBACK(on_ice_candidate), state);
+>>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
 
   GstBus *bus = gst_element_get_bus(state->pipeline);
   gst_bus_add_watch(bus, bus_call, state);
