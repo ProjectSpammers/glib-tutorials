@@ -1,7 +1,6 @@
 #include "sound_exclusion.h"
 #include <glib.h>
 
-// Standard FD number for stdin is 0, needed for g_io_channel_unix_new
 #ifndef STDIN_FILENO
 #define STDIN_FILENO 0
 #endif
@@ -19,7 +18,7 @@ void run_command_output(const gchar *cmd, gchar **result) {
   gint exit_status = 0;
 
   gboolean success = g_spawn_command_line_sync(cmd, &stdout_output,
-                                               NULL, // No stderr capture needed
+                                               NULL,
                                                &exit_status, &error);
 
   if (!success) {
@@ -151,12 +150,11 @@ void get_excluded_sound() {
   if (g_io_channel_read_line(channel, &input_line, &len, NULL, &err) ==
       G_IO_STATUS_NORMAL) {
     if (input_line) {
-      g_strstrip(input_line); // Remove newline and whitespace
+      g_strstrip(input_line);
 
       if (g_strcmp0(input_line, "exit") == 0) {
         restore_system();
       } else if (g_str_has_prefix(input_line, "exclude ")) {
-        // Split string by spaces to get IDs
         gchar **tokens = g_strsplit(input_line + 8, " ", -1);
         gchar **current = tokens;
 
