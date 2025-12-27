@@ -23,6 +23,7 @@ src_files = [
   'tutorials/gio-example/notification-sender.c',
   'tutorials/gstreamer-example/screencast.c',
   'tutorials/gstreamer-example/screencast-webrtc.c',
+  'tutorials/sound-exclusion/sound_exclusion.c',
 ]
 
 executable(

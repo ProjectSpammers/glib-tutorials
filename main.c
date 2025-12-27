@@ -3,6 +3,7 @@
 #include "tutorials/gstreamer-example/screencast-webrtc.h"
 #include "tutorials/gstreamer-example/screencast.h"
 #include "tutorials/timeout-example/timeout.h"
+#include "tutorials/sound-exclusion/sound_exclusion.h"
 #include <gio/gio.h>
 #include <glib.h>
 #include <stdio.h>
@@ -15,15 +16,19 @@ typedef struct {
   TutorialFunc func;
 } Tutorial;
 
+void screencast_webrtc_with_sound_exclusion(int argc, char *argv[]){
+    get_excluded_sound();
+    screencast_webrtc_tutorial(2,argv);
+    restore_system();
+}
+
 Tutorial tutorials[] = {
     {"timeout", timeout_tutorial},
     {"gobject-get-set", gobject_tutorial_get_set},
     {"dbus-notification", send_notification},
     {"screencast", screencast_tutorial},
     {"screencast-webrtc", screencast_webrtc_tutorial},
-
-    /* { "example", example_tutorial_function }, */ // Future tutorials go here
-
+    {"screencast-webrtc-with-sound-exclusion", screencast_webrtc_with_sound_exclusion},
     {NULL, NULL} // end of the array
 };
 

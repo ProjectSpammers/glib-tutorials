@@ -19,27 +19,20 @@ typedef struct {
   gchar *sanitized_name;
   gchar *session_path;
   gchar *session_token;
-
   GstElement *pipeline;
   GstElement *webrtcbin;
+  int is_sound_excluded; 
 } ScreencastWebRTCState;
 
 
 static void select_sources(ScreencastWebRTCState *state);
 
-// --- WebRTC Helper Functions ---
 
-<<<<<<< HEAD
-=======
 static void send_sdp_to_peer(const gchar *type, const gchar *sdp_string) {
   gchar *escaped_sdp = g_strescape(sdp_string, NULL);
-  g_print("\n\n=== SDP %s START ===\n", type);
-  g_print("{\"type\": \"%s\", \"sdp\": \"%s\"}", type, escaped_sdp);
-  g_print("\n=== SDP %s END ===\n\n", type);
   g_free(escaped_sdp);
 }
 
->>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
 static void on_offer_created(GstPromise *promise, gpointer user_data) {
   ScreencastWebRTCState *state = (ScreencastWebRTCState *)user_data;
   GstStructure *reply;
@@ -53,11 +46,8 @@ static void on_offer_created(GstPromise *promise, gpointer user_data) {
 
   if (offer) {
     g_signal_emit_by_name(state->webrtcbin, "set-local-description", offer, NULL);
-<<<<<<< HEAD
-=======
     sdp_string = gst_sdp_message_as_text(offer->sdp);
     send_sdp_to_peer("offer", sdp_string);
->>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
     gst_webrtc_session_description_free(offer);
   }
 }
@@ -68,21 +58,22 @@ static void on_negotiation_needed(GstElement *element, gpointer user_data) {
   g_signal_emit_by_name(state->webrtcbin, "create-offer", NULL, promise);
 }
 
-<<<<<<< HEAD
 
-static void notify_ice_gathering_state(GstElement *webrtc, guint mlineindex, gchar *candidate, gpointer user_data) {
+static void on_ice_gathering_state_change(GstElement *webrtc, guint mlineindex, gchar *candidate, gpointer user_data) {
 GstWebRTCICEGatheringState ice_state;
         g_object_get(webrtc, "ice-gathering-state", &ice_state, NULL);
         
         if (ice_state == GST_WEBRTC_ICE_GATHERING_STATE_COMPLETE) {
+            g_print("\n--- ICE TOPLAMA TAMAMLANDI! --- \n");
             
             GstWebRTCSessionDescription *local_desc = NULL;
             g_object_get(webrtc, "local-description", &local_desc, NULL);
+            
             if (local_desc && local_desc->sdp) {
                 gchar *sdp_text = gst_sdp_message_as_text(local_desc->sdp);
                 gchar *escaped_sdp = g_strescape(sdp_text, NULL);
                 
-                g_print("\n=== FINAL OFFER ===\n");
+                g_print("\n=== FINAL OFFER (COPY THIS) ===\n");
                 g_print("{\"type\": \"offer\", \"sdp\": \"%s\"}", escaped_sdp);
                 g_print("\n===============================\n");
                 
@@ -91,10 +82,6 @@ GstWebRTCICEGatheringState ice_state;
                 gst_webrtc_session_description_free(local_desc);
             }
         }
-=======
-static void on_ice_candidate(GstElement *webrtc, guint mlineindex, gchar *candidate, gpointer user_data) {
-  g_print("\n{\"candidate\": \"%s\", \"sdpMLineIndex\": %u}\n", candidate, mlineindex);
->>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
 }
 
 // --- Pipeline ---
@@ -167,13 +154,13 @@ static void start_stream(guint32 id, ScreencastWebRTCState *state) {
       "application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
       "queue ! sendrecv. "
 
-      "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! "
+      "pulsesrc device=GStreamer_Yayin.monitor do-timestamp=true buffer-time=200000 ! "
       "audioconvert ! "
       "audioresample ! "
       "opusenc ! "
       "rtpopuspay pt=97 ! "
       "queue ! sendrecv. ",
-      id, audio_device ? audio_device : "0");
+      id, state->is_sound_excluded > 0 ? "GStreamer_Yayin.monitor" : audio_device ? audio_device : "0");
 
   if (audio_device) g_free(audio_device);
 
@@ -189,27 +176,16 @@ static void start_stream(guint32 id, ScreencastWebRTCState *state) {
   }
 
   state->webrtcbin = gst_bin_get_by_name(GST_BIN(state->pipeline), "sendrecv");
-<<<<<<< HEAD
 
-  g_object_set(state->webrtcbin, "stun-server", "stun:credentials", NULL);
+  // --- STUN & TURN SUNUCULARINI EKLEME ---
 
+  // 1. STUN Server Ekleme (Örnek)
+  g_object_set(state->webrtcbin, "stun-server", "stun:stun.relay.metered.ca:80", NULL);
+  // 2. TURN Server Ekleme (Örnek)
   g_signal_emit_by_name(state->webrtcbin, "add-turn-server", 
-      "turn://credentials", NULL);
-  
-  g_signal_emit_by_name(state->webrtcbin, "add-turn-server", 
-      "turn://credentials", NULL);
-
-  g_signal_emit_by_name(state->webrtcbin, "add-turn-server", 
-      "turn://credentials", NULL);
-
-  g_signal_emit_by_name(state->webrtcbin, "add-turn-server", 
-      "turns://credentials", NULL);
+      "turns://test:test@test.com:443?transport=tcp", NULL);
   g_signal_connect(state->webrtcbin, "on-negotiation-needed", G_CALLBACK(on_negotiation_needed), state);
-  g_signal_connect(state->webrtcbin, "notify::ice-gathering-state", G_CALLBACK(notify_ice_gathering_state), state);
-=======
-  g_signal_connect(state->webrtcbin, "on-negotiation-needed", G_CALLBACK(on_negotiation_needed), state);
-  g_signal_connect(state->webrtcbin, "on-ice-candidate", G_CALLBACK(on_ice_candidate), state);
->>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
+  g_signal_connect(state->webrtcbin, "notify::ice-gathering-state", G_CALLBACK(on_ice_gathering_state_change), state);
 
   GstBus *bus = gst_element_get_bus(state->pipeline);
   gst_bus_add_watch(bus, bus_call, state);
@@ -433,10 +409,9 @@ static gboolean on_stdin_input(GIOChannel *channel, GIOCondition condition, gpoi
 void screencast_webrtc_tutorial(int argc, char *argv[]) {
   ScreencastWebRTCState *state = g_new0(ScreencastWebRTCState, 1);
   GError *error = NULL;
-
   g_print("Starting WebRTC Screencast (Robust Version).\n");
   state->connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
-
+  state->is_sound_excluded = argc > 1 ? 1 : 0;
   if (error) {
     g_printerr("DBus Error: %s\n", error->message);
     g_error_free(error);
