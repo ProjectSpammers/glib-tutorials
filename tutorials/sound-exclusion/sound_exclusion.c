@@ -1,128 +1,188 @@
 #include "sound_exclusion.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include <glib.h>
 
-#define VIRTUAL_SINK_NAME "GStreamer_Yayin"
-#define VIRTUAL_SINK_DESC "Yayin_Icin_Otomatik_Kanal"
-#define BUFFER_SIZE 1024
+// Standard FD number for stdin is 0, needed for g_io_channel_unix_new
+#ifndef STDIN_FILENO
+#define STDIN_FILENO 0
+#endif
 
-char original_sink[256] = {0};
-int null_module_id = -1;
-int loop_module_id = -1;
+#define VIRTUAL_SINK_NAME "GStreamer_Broadcast"
+#define VIRTUAL_SINK_DESC "Auto_Channel_For_Broadcast"
 
-void run_command_output(const char *cmd, char *result, int max_len) {
-    FILE *fp = popen(cmd, "r");
-    if (fp == NULL) {
-        printf("Hata: Komut çalıştırılamadı -> %s\n", cmd);
-        return;
-    }
-    if (fgets(result, max_len - 1, fp) != NULL) {
-        // Sondaki enter karakterini sil
-        result[strcspn(result, "\n")] = 0;
-    }
-    pclose(fp);
+gchar *original_sink = NULL;
+gint32 null_module_id = -1;
+gint32 loop_module_id = -1;
+
+void run_command_output(const gchar *cmd, gchar **result) {
+  GError *error = NULL;
+  gchar *stdout_output = NULL;
+  gint exit_status = 0;
+
+  gboolean success = g_spawn_command_line_sync(cmd, &stdout_output,
+                                               NULL, // No stderr capture needed
+                                               &exit_status, &error);
+
+  if (!success) {
+    g_printerr("Error: Failed to execute command -> %s\nMessage: %s\n", cmd,
+               error->message);
+    g_error_free(error);
+    *result = NULL;
+    return;
+  }
+
+  if (stdout_output) {
+    g_strstrip(stdout_output);
+  }
+
+  *result = stdout_output;
 }
 
-void run_command(const char *cmd) {
-    system(cmd);
+void run_command(const gchar *cmd) {
+  GError *error = NULL;
+  if (!g_spawn_command_line_sync(cmd, NULL, NULL, NULL, &error)) {
+    g_printerr("Error executing command: %s\n", error->message);
+    g_error_free(error);
+  }
 }
 
-int load_module(const char *cmd) {
-    char buffer[64];
-    run_command_output(cmd, buffer, sizeof(buffer));
-    return atoi(buffer);
-}
+gint32 load_module(const gchar *cmd) {
+  gchar *output = NULL;
+  run_command_output(cmd, &output);
 
-typedef struct {
-    int id;
-    char name[256];
-} AppInfo;
+  gint32 id = -1;
+  if (output && *output != '\0') {
+    id = (gint32)g_ascii_strtoll(output, NULL, 10);
+  }
+
+  g_free(output);
+  return id;
+}
 
 void restore_system() {
-    printf("\n[*] Sistem eski haline getiriliyor...\n");
-    
-    if (strlen(original_sink) > 0) {
-        char cmd[512];
-        snprintf(cmd, sizeof(cmd), "pactl set-default-sink %s", original_sink);
-        run_command(cmd);
-        printf(" -> Varsayılan çıkış geri yüklendi: %s\n", original_sink);
-    }
+  g_print("\n[*] Restoring system configuration...\n");
 
-    if (null_module_id != -1) {
-        char cmd[64];
-        snprintf(cmd, sizeof(cmd), "pactl unload-module %d", null_module_id);
-        run_command(cmd);
-        printf(" -> Sanal kanal silindi (ID: %d)\n", null_module_id);
-    }
+  if (original_sink != NULL && g_utf8_strlen(original_sink, -1) > 0) {
+    gchar *cmd = g_strdup_printf("pactl set-default-sink %s", original_sink);
+    run_command(cmd);
+    g_print(" -> Default sink restored: %s\n", original_sink);
+    g_free(cmd);
+  }
 
-    if (loop_module_id != -1) {
-        char cmd[64];
-        snprintf(cmd, sizeof(cmd), "pactl unload-module %d", loop_module_id);
-        run_command(cmd);
-        printf(" -> Loopback silindi (ID: %d)\n", loop_module_id);
-    }
+  if (null_module_id != -1) {
+    gchar *cmd = g_strdup_printf("pactl unload-module %d", null_module_id);
+    run_command(cmd);
+    g_print(" -> Virtual sink removed (ID: %d)\n", null_module_id);
+    g_free(cmd);
+    null_module_id = -1;
+  }
 
-    printf("[OK] Çıkış yapıldı.\n");
+  if (loop_module_id != -1) {
+    gchar *cmd = g_strdup_printf("pactl unload-module %d", loop_module_id);
+    run_command(cmd);
+    g_print(" -> Loopback removed (ID: %d)\n", loop_module_id);
+    g_free(cmd);
+    loop_module_id = -1;
+  }
+
+  g_print("[OK] Exited successfully.\n");
+
+  if (original_sink) {
+    g_free(original_sink);
+    original_sink = NULL;
+  }
 }
 
 void get_excluded_sound() {
-    restore_system();
-    run_command_output("pactl get-default-sink", original_sink, sizeof(original_sink));
-    printf("[*] Mevcut Fiziksel Çıkış: %s\n", original_sink);
+  restore_system();
 
-    if (strcmp(original_sink, VIRTUAL_SINK_NAME) == 0) {
-        printf("HATA: Zaten sanal kanal varsayılan. Lütfen önce sistemi resetleyin.\n");
-        return;
-    }
+  run_command_output("pactl get-default-sink", &original_sink);
 
-    printf("[*] Sanal kanal oluşturuluyor...\n");
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "pactl load-module module-null-sink sink_name=%s sink_properties=device.description=%s", VIRTUAL_SINK_NAME, VIRTUAL_SINK_DESC);
-    null_module_id = load_module(cmd);
-
-    printf("[*] Loopback açılıyor...\n");
-    snprintf(cmd, sizeof(cmd), "pactl load-module module-loopback source=%s.monitor sink=%s", VIRTUAL_SINK_NAME, original_sink);
-    loop_module_id = load_module(cmd);
-
-    printf("[*] Varsayılan çıkış SANAL KANAL yapılıyor...\n");
-    snprintf(cmd, sizeof(cmd), "pactl set-default-sink %s", VIRTUAL_SINK_NAME);
-    run_command(cmd);
-
-    printf("-----------------------\n");
-
-
-    char input_buffer[256];
-    printf("\nSes Kaynakları:\n");
-    system("pactl list sink-inputs | grep -E 'Sink Input #|application.name'");
-    printf("\n[Komut Bekleniyor]\n");
-    printf("1. 'exclude {id}' -> ID'si verilenleri fiziksel karta at (Yayından gizle)\n");
-    printf("2. 'exit'  -> Sistemi eski haline getir ve çık\n");
-    printf("> ");
-
-    if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) return;
-    
-    input_buffer[strcspn(input_buffer, "\n")] = 0;
-
-    if (strcmp(input_buffer, "exit") == 0) {
-        restore_system();
-    } 
-    else if (strncmp(input_buffer, "exclude ", 8) == 0) {
-        char *token = strtok(input_buffer + 8, " ");
-        while (token != NULL) {
-            int app_id = atoi(token);
-            if (app_id > 0) {
-                printf(" -> Uygulama %d Fiziksel Karta taşınıyor...\n", app_id);
-                snprintf(cmd, sizeof(cmd), "pactl move-sink-input %d %s", app_id, original_sink);
-                run_command(cmd);
-            }
-            token = strtok(NULL, " ");
-        }
-    }
-    else {
-            printf("Bilinmeyen komut. 'list', 'exclude ID' veya 'exit' yazın.\n");
-    }
-
+  if (original_sink == NULL) {
+    g_printerr("Error: Could not determine default sink.\n");
     return;
+  }
+
+  g_print("[*] Current Physical Sink: %s\n", original_sink);
+
+  if (g_strcmp0(original_sink, VIRTUAL_SINK_NAME) == 0) {
+    g_printerr("ERROR: Virtual sink is already the default. Please reset the "
+               "system first.\n");
+    return;
+  }
+
+  g_print("[*] Creating virtual sink...\n");
+  gchar *cmd_null =
+      g_strdup_printf("pactl load-module module-null-sink sink_name=%s "
+                      "sink_properties=device.description=%s",
+                      VIRTUAL_SINK_NAME, VIRTUAL_SINK_DESC);
+  null_module_id = load_module(cmd_null);
+  g_free(cmd_null);
+
+  g_print("[*] Enabling loopback...\n");
+  gchar *cmd_loop = g_strdup_printf(
+      "pactl load-module module-loopback source=%s.monitor sink=%s",
+      VIRTUAL_SINK_NAME, original_sink);
+  loop_module_id = load_module(cmd_loop);
+  g_free(cmd_loop);
+
+  g_print("[*] Setting default sink to VIRTUAL SINK...\n");
+  gchar *cmd_def =
+      g_strdup_printf("pactl set-default-sink %s", VIRTUAL_SINK_NAME);
+  run_command(cmd_def);
+  g_free(cmd_def);
+
+  g_print("-----------------------\n");
+
+  g_print("\nAudio Sources:\n");
+  run_command(
+      "pactl list sink-inputs | grep -E 'Sink Input #|application.name'");
+
+  g_print("\n[Waiting for Command]\n");
+  g_print("1. 'exclude {id} {id}...' -> Move given IDs to physical card (Hide "
+          "from broadcast)\n");
+  g_print("2. 'exit'                 -> Restore system and exit\n");
+  g_print("> ");
+
+  GIOChannel *channel = g_io_channel_unix_new(STDIN_FILENO);
+  gchar *input_line = NULL;
+  gsize len = 0;
+  GError *err = NULL;
+
+  if (g_io_channel_read_line(channel, &input_line, &len, NULL, &err) ==
+      G_IO_STATUS_NORMAL) {
+    if (input_line) {
+      g_strstrip(input_line); // Remove newline and whitespace
+
+      if (g_strcmp0(input_line, "exit") == 0) {
+        restore_system();
+      } else if (g_str_has_prefix(input_line, "exclude ")) {
+        // Split string by spaces to get IDs
+        gchar **tokens = g_strsplit(input_line + 8, " ", -1);
+        gchar **current = tokens;
+
+        while (*current != NULL) {
+          guint32 app_id = (guint32)g_ascii_strtoull(*current, NULL, 10);
+          if (app_id > 0) {
+            g_print(" -> Moving App %u to Physical Card...\n", app_id);
+            gchar *move_cmd = g_strdup_printf("pactl move-sink-input %u %s",
+                                              app_id, original_sink);
+            run_command(move_cmd);
+            g_free(move_cmd);
+          }
+          current++;
+        }
+        g_strfreev(tokens);
+      } else {
+        g_print("Unknown command. Type 'exclude ID' or 'exit'.\n");
+      }
+      g_free(input_line);
+    }
+  } else {
+    if (err) {
+      g_printerr("Error reading input: %s\n", err->message);
+      g_error_free(err);
+    }
+  }
+
+  g_io_channel_unref(channel);
 }
