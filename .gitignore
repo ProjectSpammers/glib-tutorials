@@ -1,16 +1,3 @@
-<<<<<<< HEAD
-.vscode/
-.cache/
-
-build/
-builddir/
-
-captures/
-
-compile_commands.json
-GEMINI.md
-capture.mkv
-=======
 # Ignore everything
 /*
 # But re-include directories and files that should be tracked
@@ -22,4 +9,3 @@ capture.mkv
 !/README.md
 !/tutorials/
 !/tutorials/**
->>>>>>> 5693c8fff5794204f4c32b87cec0ec51b58aee60
