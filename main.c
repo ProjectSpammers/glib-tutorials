@@ -3,20 +3,18 @@
 #include "tutorials/gstreamer-example/screencast-webrtc.h"
 #include "tutorials/gstreamer-example/screencast.h"
 #include "tutorials/timeout-example/timeout.h"
-#include "tutorials/sound-exclusion/sound_exclusion.h"
+#include "tutorials/gstreamer-example/sound_exclusion.h"
 #include <gio/gio.h>
 #include <glib.h>
-#include <stdio.h>
-#include <string.h>
 
-typedef void (*TutorialFunc)(int, char **);
+typedef void (*TutorialFunc)(gint, gchar **);
 
 typedef struct {
-  const char *name; // command name
+  const gchar *name; // command name
   TutorialFunc func;
 } Tutorial;
 
-void screencast_webrtc_with_sound_exclusion(int argc, char *argv[]){
+void screencast_webrtc_with_sound_exclusion(gint argc, gchar *argv[]){
     get_excluded_sound();
     screencast_webrtc_tutorial(2,argv);
     restore_system();
@@ -32,26 +30,33 @@ Tutorial tutorials[] = {
     {NULL, NULL} // end of the array
 };
 
-void print_help(const char *prog_name) {
-  printf("Usage: %s <command>\n", prog_name);
-  printf("Available commands:\n");
+void print_help(const gchar *prog_name) {
+  g_print("Usage: %s <command>\n", prog_name);
+  g_print("Available commands:\n");
 
-  for (int i = 0; tutorials[i].name != NULL; i++) {
-    printf("  - %s\n", tutorials[i].name);
+  for (gint i = 0; tutorials[i].name != NULL; i++) {
+    g_print("  - %s\n", tutorials[i].name);
   }
 }
 
-int main(int argc, char *argv[]) {
+gint main(gint argc, gchar *argv[]) {
   if (argc < 2) {
     print_help(argv[0]);
     return 1;
   }
 
+  if (g_strcmp0(argv[1], "--list-commands") == 0) {
+    for (gint i = 0; tutorials[i].name != NULL; i++) {
+      g_print("%s\n", tutorials[i].name);
+    }
+    return 0;
+  }
+
   gboolean found = FALSE;
 
-  for (int i = 0; tutorials[i].name != NULL; i++) {
-    if (strcmp(argv[1], tutorials[i].name) == 0) {
-      printf("Running tutorial: %s\n", tutorials[i].name);
+  for (gint i = 0; tutorials[i].name != NULL; i++) {
+    if (g_strcmp0(argv[1], tutorials[i].name) == 0) {
+      g_print("Running tutorial: %s\n", tutorials[i].name);
 
       tutorials[i].func(argc - 1, argv + 1);
 
@@ -61,7 +66,7 @@ int main(int argc, char *argv[]) {
   }
 
   if (!found) {
-    printf("Error: Command '%s' not found.\n", argv[1]);
+    g_print("Error: Command '%s' not found.\n", argv[1]);
     print_help(argv[0]);
     return 1;
   }

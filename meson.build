@@ -23,7 +23,7 @@ src_files = [
   'tutorials/gio-example/notification-sender.c',
   'tutorials/gstreamer-example/screencast.c',
   'tutorials/gstreamer-example/screencast-webrtc.c',
-  'tutorials/sound-exclusion/sound_exclusion.c',
+  'tutorials/gstreamer-example/sound_exclusion.c',
 ]
 
 executable(
@@ -41,3 +41,20 @@ executable(
   ],
   install: true,
 )
+
+bash_completion = dependency('bash-completion', required: false)
+if bash_completion.found()
+  bash_comp_dir = bash_completion.get_variable('completionsdir')
+else
+  bash_comp_dir = get_option('datadir') / 'bash-completion/completions'
+endif
+
+install_data(
+  'completions/glib-tutorials.bash',
+  rename: 'glib-tutorials',
+  install_dir: bash_comp_dir,
+)
+
+zsh_comp_dir = get_option('datadir') / 'zsh/site-functions'
+install_data('completions/_glib-tutorials', install_dir: zsh_comp_dir)
+

@@ -1,0 +1,9 @@
+#compdef glib-tutorials
+
+_glib-tutorials() {
+    local -a commands
+    commands=(${(f)"$(_call_program commands glib-tutorials --list-commands 2>/dev/null)"})
+    _describe 'command' commands
+}
+
+_glib-tutorials "$@"
