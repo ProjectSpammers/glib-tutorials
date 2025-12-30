@@ -1,0 +1,60 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: Latest
+ColumnLimit: 120
+
+# Indentation and Tabs
+UseTab: Never
+IndentWidth: 4
+TabWidth: 4
+ContinuationIndentWidth: 4
+
+# Brace Wrapping
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterObjCDeclaration: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: true
+  BeforeElse: false # Keeps "} else {" on the same line
+  IndentBraces: false
+  SplitEmptyFunction: true
+
+# Control Statements
+AllowShortIfStatementsOnASingleLine: false
+AllowShortBlocksOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+SpaceBeforeParens: ControlStatements # if (condition)
+
+# Functions
+AlwaysBreakAfterReturnType: AllDefinitions # return_type \n function_name
+
+# Strings
+BreakStringLiterals: false # Crucial: prevents breaking long GStreamer caps/strings
+
+# Classes (C++ specific)
+AccessModifierOffset: -4 # Aligns 'public:' and 'private:' to the left
+
+# Pointers and References
+PointerAlignment: Right # int *pointer;
+DerivePointerAlignment: false
+
+# Includes
+SortIncludes: false # Disables alphabetical sorting
+
+# Alignment Rules
+AlignConsecutiveDeclarations: true # Aligns variable names in structs/declarations
+AlignConsecutiveAssignments: true  # Aligns the '=' signs
+AlignArrayOfStructures: Left      # This creates the table-look for your Tutorial array
+AlignTrailingComments: true       # Keeps comments after code aligned
+
+# Miscellaneous
+SpaceAfterCStyleCast: true
+SpacesInContainerLiterals: false
+---
