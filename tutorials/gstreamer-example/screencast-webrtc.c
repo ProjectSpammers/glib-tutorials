@@ -607,11 +607,8 @@ void screencast_webrtc_tutorial(int argc, char* argv[]) {
       g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
   // 2. Set Room ID (Random or Argument)
-  if (argc > 1) {
-    state->room_id = g_strdup(argv[1]);
-  } else {
-    state->room_id = g_strdup_printf("%d", g_random_int_range(1000, 9999));
-  }
+  state->is_sound_excluded = argc > 1 ? 1 : 0;
+  state->room_id = g_strdup_printf("%d", g_random_int_range(1000, 9999));
 
   g_print("\n============================================\n");
   g_print("   ROOM ID: %s (Tell your friend this number)\n", state->room_id);
