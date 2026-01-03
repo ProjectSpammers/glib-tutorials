@@ -12,8 +12,10 @@ gst_dep = dependency('gstreamer-1.0')
 gst_video_dep = dependency('gstreamer-video-1.0')
 gst_webrtc_dep = dependency('gstreamer-webrtc-1.0')
 json_glib_dep = dependency('json-glib-1.0')
+libsoup_dep = dependency('libsoup-3.0')
 
 gio_unix_dep = dependency('gio-unix-2.0', required: false)
+
 
 src_files = [
   'main.c',
@@ -38,6 +40,7 @@ executable(
     gst_video_dep,
     gst_webrtc_dep,
     json_glib_dep,
+    libsoup_dep,
   ],
   install: true,
 )
@@ -57,4 +60,3 @@ install_data(
 
 zsh_comp_dir = get_option('datadir') / 'zsh/site-functions'
 install_data('completions/_glib-tutorials', install_dir: zsh_comp_dir)
-

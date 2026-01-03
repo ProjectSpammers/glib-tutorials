@@ -11,6 +11,9 @@
 !/tutorials/**
 !/completions/
 !/completions/**
-!/webpages/
-!/webpages/**
+!/demo-pages/
+!/demo-pages/**
 
+# Explicit ignores (override the re-inclusions above):
+secrets.h
+receiver.html
