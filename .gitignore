@@ -15,5 +15,5 @@
 !/demo-pages/**
 
 # Explicit ignores (override the re-inclusions above):
-secrets.h
-receiver.html
+**/secrets.h
+**/receiver.html
