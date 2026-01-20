@@ -17,22 +17,25 @@
 #define REQUEST_INTERFACE "org.freedesktop.portal.Request"
 
 typedef struct {
+  GstElement* webrtcbin;
+  gchar* room_id;
+  GHashTable* seen_candidates;  // To avoid adding the same candidate twice
+  guint poll_timeout_id;
+  SoupSession* soup_session;
+} WebRTCUniqueState;
+
+typedef struct {
   GMainLoop* loop;
   GDBusConnection* connection;
   gchar* sanitized_name;
   gchar* session_path;
   gchar* session_token;
   GstElement* pipeline;
-  GstElement* webrtcbin;
   int is_sound_excluded;
-
-  // Networking & State:
-  SoupSession* soup_session;
-  gchar* room_id;
-  guint poll_timeout_id;
-  GHashTable* seen_candidates;  // To avoid adding the same candidate twice
-
+  WebRTCUniqueState* webrtc_state;
 } ScreencastWebRTCState;
+
+
 
 static void select_sources(ScreencastWebRTCState* state);
 static void start_stream(guint32 id, ScreencastWebRTCState* state);
@@ -69,7 +72,7 @@ static void on_upload_complete(GObject* source, GAsyncResult* res,
   g_free(path);
 }
 
-static void send_firebase_request(ScreencastWebRTCState* state,
+static void send_firebase_request(WebRTCUniqueState* state,
                                   const gchar* method, const gchar* subpath,
                                   const gchar* json_data) {
   gchar* url = g_strdup_printf("%s/rooms/%s/%s.json", FIREBASE_URL,
@@ -91,8 +94,7 @@ static void send_firebase_request(ScreencastWebRTCState* state,
 
 static void on_ice_candidate(GstElement* webrtc, guint mline_index,
                              gchar* candidate, gpointer user_data) {
-  ScreencastWebRTCState* state = (ScreencastWebRTCState*)user_data;
-
+  WebRTCUniqueState* state = (WebRTCUniqueState*)user_data;
   // Create JSON: { "candidate": "...", "sdpMLineIndex": 0 }
   JsonBuilder* builder = json_builder_new();
   json_builder_begin_object(builder);
@@ -114,7 +116,7 @@ static void on_ice_candidate(GstElement* webrtc, guint mline_index,
   g_object_unref(builder);
 }
 
-static void check_peer_candidates(ScreencastWebRTCState* state) {
+static void check_peer_candidates(WebRTCUniqueState* state) {
   gchar* url = g_strdup_printf("%s/rooms/%s/candidates/callee.json",
                                FIREBASE_URL, state->room_id);
   SoupMessage* msg = soup_message_new("GET", url);
@@ -166,7 +168,7 @@ static void check_peer_candidates(ScreencastWebRTCState* state) {
   g_free(url);
 }
 
-static void process_sdp_answer(ScreencastWebRTCState* state,
+static void process_sdp_answer(WebRTCUniqueState* state,
                                const gchar* json_input) {
   // Robust JSON parsing using json-glib
   JsonParser* parser = json_parser_new();
@@ -197,8 +199,7 @@ static void process_sdp_answer(ScreencastWebRTCState* state,
 }
 
 static gboolean signaling_poll(gpointer user_data) {
-  ScreencastWebRTCState* state = (ScreencastWebRTCState*)user_data;
-
+  WebRTCUniqueState* state = (WebRTCUniqueState*)user_data;
   // 1. Check for Answer (GET)
   gchar* url =
       g_strdup_printf("%s/rooms/%s/answer.json", FIREBASE_URL, state->room_id);
@@ -232,7 +233,7 @@ static gboolean signaling_poll(gpointer user_data) {
 }
 
 static void on_offer_created(GstPromise* promise, gpointer user_data) {
-  ScreencastWebRTCState* state = (ScreencastWebRTCState*)user_data;
+  WebRTCUniqueState* state = (WebRTCUniqueState*)user_data;
   GstStructure* reply;
   GstWebRTCSessionDescription* offer = NULL;
 
@@ -283,7 +284,8 @@ static void on_offer_created(GstPromise* promise, gpointer user_data) {
 }
 
 static void on_negotiation_needed(GstElement* element, gpointer user_data) {
-  ScreencastWebRTCState* state = (ScreencastWebRTCState*)user_data;
+  g_printf("[WebRTC] Negotiation needed, creating offer...\n");
+  WebRTCUniqueState* state = (WebRTCUniqueState*)user_data;
   GstPromise* promise =
       gst_promise_new_with_change_func(on_offer_created, state, NULL);
   g_signal_emit_by_name(state->webrtcbin, "create-offer", NULL, promise);
@@ -327,56 +329,36 @@ static gchar* get_default_monitor_source() {
   pclose(fp);
   return g_strdup_printf("%s.monitor", path);
 }
-
 static void start_stream(guint32 id, ScreencastWebRTCState* state) {
   g_print("\n>>> Starting WebRTC Pipeline... Node ID: %d\n", id);
   gst_init(NULL, NULL);
   gchar* audio_device = get_default_monitor_source();
 
+  // Pipeline string aynı kalıyor (Tee ile bitiyor)
   char* pipeline_str = g_strdup_printf(
-      "webrtcbin name=sendrecv stun-server=stun://stun.l.google.com:19302 "
-      "bundle-policy=max-bundle latency=0 "
-
       // --- VIDEO ---
       "pipewiresrc path=%u do-timestamp=true ! "
       "queue max-size-buffers=3 leaky=downstream ! "
       "videoconvert ! "
       "videoscale ! videorate ! "
-
-      "video/"
-      "x-raw(memory:SystemMemory),format=NV12,width=1920,height=1080,framerate="
-      "60/1 ! "
-
-      "nvh264enc "
-      "bitrate=8000 "
-      "rc-mode=cbr "
-      "preset=low-latency-hq "
-      "tune=ultra-low-latency "
-      "gop-size=60 "
-      "zerolatency=true "
-      "qos=false ! "
-
+      "video/x-raw(memory:SystemMemory),format=NV12,width=1920,height=1080,framerate=60/1 ! "
+      "nvh264enc bitrate=8000 rc-mode=cbr preset=low-latency-hq tune=ultra-low-latency gop-size=60 zerolatency=true qos=false ! "
       "h264parse ! "
       "video/x-h264,stream-format=byte-stream,profile=constrained-baseline ! "
-
       "rtph264pay config-interval=1 pt=96 aggregate-mode=zero-latency ! "
-      "application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
-      "queue ! sendrecv. "
+      "tee name=t_video allow-not-linked=true " // Video Tee
 
-      "pulsesrc device=%s do-timestamp=true "
-      "buffer-time=200000 ! "
-      "audioconvert ! "
-      "audioresample ! "
-      "opusenc ! "
+      // --- AUDIO ---
+      "pulsesrc device=%s do-timestamp=true buffer-time=200000 ! "
+      "audioconvert ! audioresample ! opusenc ! "
       "rtpopuspay pt=97 ! "
-      "queue ! sendrecv. ",
+      "tee name=t_audio allow-not-linked=true ", // Audio Tee
       id,
       state->is_sound_excluded > 0 ? "GStreamer_Stream.monitor"
       : audio_device               ? audio_device
                                    : "0");
 
-  if (audio_device)
-    g_free(audio_device);
+  if (audio_device) g_free(audio_device);
 
   GError* error = NULL;
   state->pipeline = gst_parse_launch(pipeline_str, &error);
@@ -389,16 +371,54 @@ static void start_stream(guint32 id, ScreencastWebRTCState* state) {
     return;
   }
 
-  state->webrtcbin = gst_bin_get_by_name(GST_BIN(state->pipeline), "sendrecv");
+  GstElement* t_video = gst_bin_get_by_name(GST_BIN(state->pipeline), "t_video");
+  GstElement* t_audio = gst_bin_get_by_name(GST_BIN(state->pipeline), "t_audio");
+  GstElement* q_video = gst_element_factory_make("queue", "q_video_main");
+  g_object_set(q_video, "leaky", 1, "max-size-buffers", 10, "max-size-time", 0, "max-size-bytes", 0, NULL);
+  GstElement* q_audio = gst_element_factory_make("queue", "q_audio_main");
+  g_object_set(q_audio, "leaky", 1, "max-size-buffers", 50, NULL);
+  state->webrtc_state->webrtcbin = gst_element_factory_make("webrtcbin", "sendrecv");
+  gst_bin_add_many(GST_BIN(state->pipeline), q_video, q_audio, state->webrtc_state->webrtcbin, NULL);
+  GstPad* t_video_src = gst_element_request_pad_simple(t_video, "src_%u");
+  GstPad* q_video_sink = gst_element_get_static_pad(q_video, "sink");
+  GstPad* q_video_src = gst_element_get_static_pad(q_video, "src");
+  GstPad* webrtc_video_sink = gst_element_get_request_pad(state->webrtc_state->webrtcbin, "sink_%u");
 
-  g_signal_connect(state->webrtcbin, "on-negotiation-needed",
-                   G_CALLBACK(on_negotiation_needed), state);
-  g_signal_connect(state->webrtcbin, "on-ice-candidate",
-                   G_CALLBACK(on_ice_candidate), state);
+  if (gst_pad_link(t_video_src, q_video_sink) != GST_PAD_LINK_OK ||
+      gst_pad_link(q_video_src, webrtc_video_sink) != GST_PAD_LINK_OK) {
+      g_printerr("Main Video linking failed!\n");
+  }
+  gst_object_unref(t_video_src);
+  gst_object_unref(q_video_sink);
+  gst_object_unref(q_video_src);
+  gst_object_unref(webrtc_video_sink);
+
+  GstPad* t_audio_src = gst_element_request_pad_simple(t_audio, "src_%u");
+  GstPad* q_audio_sink = gst_element_get_static_pad(q_audio, "sink");
+  GstPad* q_audio_src = gst_element_get_static_pad(q_audio, "src");
+  GstPad* webrtc_audio_sink = gst_element_get_request_pad(state->webrtc_state->webrtcbin, "sink_%u");
+
+  if (gst_pad_link(t_audio_src, q_audio_sink) != GST_PAD_LINK_OK ||
+      gst_pad_link(q_audio_src, webrtc_audio_sink) != GST_PAD_LINK_OK) {
+      g_printerr("Main Audio linking failed!\n");
+  }
+  gst_object_unref(t_audio_src);
+  gst_object_unref(q_audio_sink);
+  gst_object_unref(q_audio_src);
+  gst_object_unref(webrtc_audio_sink);
+
+  // 5. Sinyalleri Bağla
+  g_signal_connect(state->webrtc_state->webrtcbin, "on-negotiation-needed",
+                   G_CALLBACK(on_negotiation_needed), state->webrtc_state);
+  g_signal_connect(state->webrtc_state->webrtcbin, "on-ice-candidate",
+                   G_CALLBACK(on_ice_candidate), state->webrtc_state);
 
   GstBus* bus = gst_element_get_bus(state->pipeline);
   gst_bus_add_watch(bus, bus_call, state);
   gst_object_unref(bus);
+
+  gst_object_unref(t_video);
+  gst_object_unref(t_audio);
 
   gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
 }
@@ -594,36 +614,121 @@ static void create_session(ScreencastWebRTCState* state) {
   g_free(token);
 }
 
+static gboolean on_stdin_input(GIOChannel* channel, GIOCondition condition,
+                               gpointer user_data) {
+  ScreencastWebRTCState* state = user_data;
+  gchar* line = NULL;
+  if (g_io_channel_read_line(channel, &line, NULL, NULL, NULL) ==
+      G_IO_STATUS_NORMAL) {
+    gchar* trimmed = g_strchomp(line);
+    
+    if (g_str_has_prefix(trimmed, "i")) {
+        WebRTCUniqueState* state_unique = g_new0(WebRTCUniqueState, 1);
+        
+        state_unique->soup_session = soup_session_new_with_options("user-agent", "ProjectSpammers/1.0", NULL);
+        state_unique->seen_candidates = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+        state_unique->room_id = g_strdup_printf("%d", g_random_int_range(1000, 9999));
+        
+        g_print("\n--------------------------------------------\n");
+        g_print("   NEW VIEWER ROOM ID: %s\n", state_unique->room_id);
+        g_print("--------------------------------------------\n");
+
+        GstElement* t_video = gst_bin_get_by_name(GST_BIN(state->pipeline), "t_video");
+        GstElement* t_audio = gst_bin_get_by_name(GST_BIN(state->pipeline), "t_audio");
+        GstElement* q_video = gst_element_factory_make("queue", NULL);
+        g_object_set(q_video, 
+                     "leaky", 1,               
+                     "max-size-buffers", 10,    
+                     "max-size-time", 0, 
+                     "max-size-bytes", 0, 
+                     NULL);
+
+        GstElement* q_audio = gst_element_factory_make("queue", NULL);
+        g_object_set(q_audio, "leaky", 1, "max-size-buffers", 50, NULL);
+
+        state_unique->webrtcbin = gst_element_factory_make("webrtcbin", NULL);
+
+        gst_bin_add_many(GST_BIN(state->pipeline), q_video, q_audio, state_unique->webrtcbin, NULL);
+        gst_element_sync_state_with_parent(q_video);
+        gst_element_sync_state_with_parent(q_audio);
+        gst_element_sync_state_with_parent(state_unique->webrtcbin);
+
+        GstPad* t_video_src = gst_element_request_pad_simple(t_video, "src_%u");
+        GstPad* q_video_sink = gst_element_get_static_pad(q_video, "sink");
+        GstPad* q_video_src = gst_element_get_static_pad(q_video, "src");
+        GstPad* webrtc_video_sink = gst_element_get_request_pad(state_unique->webrtcbin, "sink_%u");
+
+        if (gst_pad_link(t_video_src, q_video_sink) != GST_PAD_LINK_OK ||
+            gst_pad_link(q_video_src, webrtc_video_sink) != GST_PAD_LINK_OK) {
+            g_printerr("Video linking failed!\n");
+        }
+        gst_object_unref(t_video_src);
+        gst_object_unref(q_video_sink);
+        gst_object_unref(q_video_src);
+        gst_object_unref(webrtc_video_sink);
+
+        GstPad* t_audio_src = gst_element_request_pad_simple(t_audio, "src_%u");
+        GstPad* q_audio_sink = gst_element_get_static_pad(q_audio, "sink");
+        GstPad* q_audio_src = gst_element_get_static_pad(q_audio, "src");
+        GstPad* webrtc_audio_sink = gst_element_get_request_pad(state_unique->webrtcbin, "sink_%u");
+
+        if (gst_pad_link(t_audio_src, q_audio_sink) != GST_PAD_LINK_OK ||
+            gst_pad_link(q_audio_src, webrtc_audio_sink) != GST_PAD_LINK_OK) {
+            g_printerr("Audio linking failed!\n");
+        }
+        gst_object_unref(t_audio_src);
+        gst_object_unref(q_audio_sink);
+        gst_object_unref(q_audio_src);
+        gst_object_unref(webrtc_audio_sink);
+
+        g_signal_connect(state_unique->webrtcbin, "on-negotiation-needed",
+                        G_CALLBACK(on_negotiation_needed), state_unique);
+        g_signal_connect(state_unique->webrtcbin, "on-ice-candidate",
+                        G_CALLBACK(on_ice_candidate), state_unique);
+
+        gst_object_unref(t_video);
+        gst_object_unref(t_audio);
+    }
+    else if (g_strcmp0(trimmed, "exit") == 0) {
+      g_main_loop_quit(state->loop);
+    }
+    g_free(line);
+  }
+  return TRUE;
+}
+
 // --- Main ---
 
 void screencast_webrtc_tutorial(int argc, char* argv[]) {
   ScreencastWebRTCState* state = g_new0(ScreencastWebRTCState, 1);
   GError* error = NULL;
-
-  // 1. Initialize Networking
-  state->soup_session =
+  state->webrtc_state = g_new0(WebRTCUniqueState, 1);  // 1. Initialize Networking
+  state->webrtc_state ->soup_session =
       soup_session_new_with_options("user-agent", "ProjectSpammers/1.0", NULL);
-  state->seen_candidates =
+  state->webrtc_state ->seen_candidates =
       g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 
   // 2. Set Room ID (Random or Argument)
   state->is_sound_excluded = argc > 1 ? 1 : 0;
-  state->room_id = g_strdup_printf("%d", g_random_int_range(1000, 9999));
+  state->webrtc_state ->room_id = g_strdup_printf("%d", g_random_int_range(1000, 9999));
 
   g_print("\n============================================\n");
-  g_print("   ROOM ID: %s (Tell your friend this number)\n", state->room_id);
+  g_print("   ROOM ID: %s (Tell your friend this number)\n", state->webrtc_state->room_id);
   g_print("============================================\n");
 
   // 3. Setup DBus & Main Loop
   state->connection = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
   state->is_sound_excluded =
       0;  // Keeping it simple for now, add argc check if you want
-  if (error) {
+  if (error) {  
     g_printerr("DBus Error: %s\n", error->message);
     return;
   }
 
   state->loop = g_main_loop_new(NULL, FALSE);
+  GIOChannel* stdin_ch = g_io_channel_unix_new(0);
+  g_io_add_watch(stdin_ch, G_IO_IN, on_stdin_input, state);
+  g_io_channel_unref(stdin_ch);
 
   // 4. Start Portal Sequence
   create_session(state);
@@ -631,11 +736,11 @@ void screencast_webrtc_tutorial(int argc, char* argv[]) {
   g_main_loop_run(state->loop);
 
   // Cleanup
-  if (state->poll_timeout_id > 0)
-    g_source_remove(state->poll_timeout_id);
-  g_hash_table_destroy(state->seen_candidates);
-  g_object_unref(state->soup_session);
-  g_free(state->room_id);
+  if (state->webrtc_state ->poll_timeout_id > 0)
+    g_source_remove(state->webrtc_state ->poll_timeout_id);
+  g_hash_table_destroy(state->webrtc_state ->seen_candidates);
+  g_object_unref(state->webrtc_state ->soup_session);
+  g_free(state->webrtc_state ->room_id);
   g_main_loop_unref(state->loop);
   g_free(state->sanitized_name);
   g_free(state->session_path);
